@@ -1,94 +1,94 @@
-# IFRS 17 示例科目表（Chart of Accounts）
+# IFRS 17 Chart of Accounts (Example)
 # ──────────────────────────────────────────────────────────────────────────────
-# 分类：
-#   1xxx  资产
-#   2xxx  负债（ICL / RCA 均在此，RCA 为合同资产，用负数余额表示净资产）
-#   3xxx  权益
-#   4xxx  利润表（收入/费用）
-#   5xxx  其他综合收益（OCI）
+# Classification:
+#   1xxx  Assets
+#   2xxx  Liabilities (ICL / RCA; RCA carries a negative balance as a net asset)
+#   3xxx  Equity
+#   4xxx  Income Statement (Revenue / Expense)
+#   5xxx  Other Comprehensive Income (OCI)
 # ──────────────────────────────────────────────────────────────────────────────
 
 accounts:
 
-  # ── 资产 ───────────────────────────────────────────────────────────────────
+  # ── Assets ─────────────────────────────────────────────────────────────────
   assets:
     - code: "1100"
-      name: "现金及银行存款"
+      name: "Cash and Bank Deposits"
     - code: "1200"
-      name: "投资资产"
+      name: "Investment Assets"
     - code: "1900"
-      name: "保费应收 / 理赔应付（净轧差）"
+      name: "Premium Receivable / Claims Payable (Net)"
 
-  # ── IFRS 17 负债：直接业务 ICL（保险合同负债）──────────────────────────────
+  # ── IFRS 17 Liabilities: Direct Business ICL (Insurance Contract Liability) ─
   icl_lrc:
     - code: "2100"
-      name: "ICL-LRC — PVFCF（未来现金流现值）"
+      name: "ICL-LRC — PVFCF (Present Value of Future Cash Flows)"
     - code: "2110"
-      name: "ICL-LRC — RA（风险调整）"
+      name: "ICL-LRC — RA (Risk Adjustment)"
     - code: "2120"
-      name: "ICL-LRC — CSM（合同服务边际）"
+      name: "ICL-LRC — CSM (Contractual Service Margin)"
     - code: "2130"
-      name: "ICL-LRC — LC（亏损部分）"
+      name: "ICL-LRC — LC (Loss Component)"
 
   icl_lic:
     - code: "2200"
-      name: "ICL-LIC（已发生理赔负债）"
+      name: "ICL-LIC (Liability for Incurred Claims)"
     - code: "2210"
-      name: "ICL-LIC — IBNR（已发生未报告）"
+      name: "ICL-LIC — IBNR (Incurred But Not Reported)"
 
-  # ── IFRS 17 资产：再保险合同资产（RCA）────────────────────────────────────
+  # ── IFRS 17 Assets: Reinsurance Contract Assets (RCA) ──────────────────────
   rca:
     - code: "2300"
-      name: "RCA — PVFCF（分出未来现金流现值）"
+      name: "RCA — PVFCF (Ceded PVFCF)"
     - code: "2310"
-      name: "RCA — RA（分出风险调整）"
+      name: "RCA — RA (Ceded Risk Adjustment)"
     - code: "2320"
-      name: "RCA — CSM（分出合同服务边际）"
+      name: "RCA — CSM (Ceded CSM)"
     - code: "2330"
-      name: "RCA — 分出亏损部分回收"
+      name: "RCA — Ceded Loss Component Recovery"
 
-  # ── 权益 ───────────────────────────────────────────────────────────────────
+  # ── Equity ─────────────────────────────────────────────────────────────────
   equity:
     - code: "3100"
-      name: "留存收益 / 新业务首次确认对侧"
+      name: "Retained Earnings / New Business Day-1 Offset"
     - code: "3200"
-      name: "其他综合收益累计（OCI 累计）"
+      name: "Accumulated OCI"
 
-  # ── 利润表：保险服务结果 ────────────────────────────────────────────────────
+  # ── Income Statement: Insurance Service Result ──────────────────────────────
   insurance_pl:
     - code: "4100"
-      name: "保险收入（Insurance Revenue / ISR）"
+      name: "Insurance Revenue (ISR)"
     - code: "4110"
-      name: "保险收入 — 预期现金流释放"
+      name: "Insurance Revenue — Expected CF Release"
     - code: "4120"
-      name: "保险收入 — RA 释放"
+      name: "Insurance Revenue — RA Release"
     - code: "4130"
-      name: "保险收入 — CSM 摊销"
+      name: "Insurance Revenue — CSM Amortisation"
     - code: "4140"
-      name: "保险收入 — LC 回转"
+      name: "Insurance Revenue — LC Reversal"
     - code: "4200"
-      name: "保险服务费用（Insurance Service Expense / ISE）"
+      name: "Insurance Service Expense (ISE)"
     - code: "4210"
-      name: "保险服务费用 — 经验差异"
+      name: "Insurance Service Expense — Experience Variance"
     - code: "4220"
-      name: "保险服务费用 — LC 确认（亏损合同首次）"
+      name: "Insurance Service Expense — LC Recognition (Onerous)"
     - code: "4230"
-      name: "保险服务费用 — 假设变更（RA / P&L 部分）"
+      name: "Insurance Service Expense — Assumption Changes (RA / P&L)"
     - code: "4240"
-      name: "保险服务费用 — 获取成本摊销（IACF，PAA）"
+      name: "Insurance Service Expense — IACF Amortisation (PAA)"
 
-  # ── 利润表：保险融资收入 / 费用（IFIE）──────────────────────────────────────
+  # ── Income Statement: Insurance Finance Income / Expense (IFIE) ────────────
   ifie_pl:
     - code: "4300"
-      name: "IFIE — P&L（保险融资费用，按 DAIR 展开折现）"
+      name: "IFIE — P&L (Finance charge at locked-in rate DAIR)"
     - code: "4310"
-      name: "IFIE — P&L（再保险 RCA 端，分出方收入）"
+      name: "IFIE — P&L (RCA side — ceded finance income)"
 
-  # ── 其他综合收益（OCI）────────────────────────────────────────────────────
+  # ── Other Comprehensive Income (OCI) ───────────────────────────────────────
   oci:
     - code: "5100"
-      name: "OCI — IFIE（当前利率 vs DAIR 差异）"
+      name: "OCI — IFIE (Current rate vs DAIR difference)"
     - code: "5110"
-      name: "OCI — FX 汇率折算差异"
+      name: "OCI — FX Translation Difference"
     - code: "5120"
-      name: "OCI — 再保险 RCA 端利率差异"
+      name: "OCI — RCA Finance Rate Difference"

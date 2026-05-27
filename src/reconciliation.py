@@ -84,7 +84,7 @@ def reconcile_portfolio(
         "eom_icl_calc":    df["eom_icl_calc"].sum(),
         "eom_icl_input":   df["eom_icl_input"].sum(),
         "diff":            round(df["diff"].sum(), 4),
-        "ok":              df["ok"].all(),
+        "ok":              bool(df["ok"].all()),
     }
     df = pd.concat([df, pd.DataFrame([summary_row])], ignore_index=True)
     return df
@@ -142,18 +142,18 @@ def aoc_waterfall(aoc_list: List[AOCResult]) -> pd.DataFrame:
     DataFrame with columns: aoc_item | amount
     """
     items = [
-        ("BOM ICL",                         lambda a: a.bom_icl),
-        ("① 新业务首次确认",               lambda a: a.new_business),
-        ("② 预期现金流释放（含 RA）",       lambda a: a.expected_cf_release),
-        ("③ 经验差异",                      lambda a: a.experience_variance),
-        ("④ CSM 摊销",                      lambda a: a.csm_amortisation),
-        ("⑤ 亏损合同 LC 回转",             lambda a: a.lc_reversal),
-        ("⑥ IFIE — P&L（DAIR 展开）",     lambda a: a.finance_charge_pl),
-        ("⑦ IFIE — OCI（利率变动）",       lambda a: a.finance_charge_oci),
-        ("⑧ 假设变更 → P&L",              lambda a: a.assumption_chg_pl),
-        ("⑨ 假设变更 → CSM",              lambda a: a.assumption_chg_csm),
-        ("汇率影响",                        lambda a: a.fx_effect),
-        ("EOM ICL（输入）",                 lambda a: a.eom_icl),
+        ("BOM ICL",                              lambda a: a.bom_icl),
+        ("① New Business",                       lambda a: a.new_business),
+        ("② Expected CF Release (incl. RA)",     lambda a: a.expected_cf_release),
+        ("③ Experience Variance",                lambda a: a.experience_variance),
+        ("④ CSM Amortisation",                   lambda a: a.csm_amortisation),
+        ("⑤ LC Reversal",                        lambda a: a.lc_reversal),
+        ("⑥ IFIE — P&L (DAIR unwind)",          lambda a: a.finance_charge_pl),
+        ("⑦ IFIE — OCI (rate change)",           lambda a: a.finance_charge_oci),
+        ("⑧ Assumption Change → P&L",           lambda a: a.assumption_chg_pl),
+        ("⑨ Assumption Change → CSM",           lambda a: a.assumption_chg_csm),
+        ("FX Effect",                            lambda a: a.fx_effect),
+        ("EOM ICL (Input)",                      lambda a: a.eom_icl),
     ]
     rows = []
     for label, fn in items:

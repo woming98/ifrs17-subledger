@@ -148,22 +148,22 @@ class AOCResult:
         return self.finance_charge_oci
 
     def aoc_summary(self) -> dict:
-        """返回全部 AOC 变动项的字典，方便报表使用"""
+        """Return all AOC movement items as a dict (used by reporting)."""
         return {
             "BOM ICL": self.bom_icl,
-            "① 新业务首次确认": self.new_business,
-            "② 预期现金流释放（含 RA）": self.expected_cf_release,
-            "③ 经验差异": self.experience_variance,
-            "④ CSM 摊销": self.csm_amortisation,
-            "⑤ 亏损合同回转（LC）": self.lc_reversal,
-            "⑥ IFIE — P&L（DAIR 展开）": self.finance_charge_pl,
-            "⑦ IFIE — OCI（利率变动）": self.finance_charge_oci,
-            "⑧ 假设变更 → P&L": self.assumption_chg_pl,
-            "⑨ 假设变更 → CSM": self.assumption_chg_csm,
-            "汇率影响": self.fx_effect,
-            "EOM ICL（计算）": self.bom_icl + self.total_movements,
-            "EOM ICL（输入）": self.eom_icl,
-            "对账差异": self.reconciliation_diff,
+            "① New Business": self.new_business,
+            "② Expected CF Release (incl. RA)": self.expected_cf_release,
+            "③ Experience Variance": self.experience_variance,
+            "④ CSM Amortisation": self.csm_amortisation,
+            "⑤ LC Reversal": self.lc_reversal,
+            "⑥ IFIE — P&L (DAIR unwind)": self.finance_charge_pl,
+            "⑦ IFIE — OCI (rate change)": self.finance_charge_oci,
+            "⑧ Assumption Change → P&L": self.assumption_chg_pl,
+            "⑨ Assumption Change → CSM": self.assumption_chg_csm,
+            "FX Effect": self.fx_effect,
+            "EOM ICL (Calculated)": self.bom_icl + self.total_movements,
+            "EOM ICL (Input)": self.eom_icl,
+            "Recon Diff": self.reconciliation_diff,
         }
 
 
