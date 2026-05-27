@@ -1,0 +1,6 @@
+cohort_id,product,measurement_model,period,currency,pvfcf_eom,ra_eom,csm_eom,lc_eom,new_biz_pvfcf,new_biz_ra,new_biz_csm,exp_cf_release,experience_var,csm_amortisation,lc_reversal,finance_charge_pl,finance_charge_oci,assumption_chg_pl,assumption_chg_csm,fx_effect,premium_written,premium_earned,iacf_amortisation,dair,cession_rate,period_fraction
+TERM_GMM_2022Q4,Term Non-Par 5Y,GMM,2024Q4,HKD,14535.0,560.0,2200.0,0.0,0.0,0.0,0.0,-550.0,80.0,-250.0,0.0,72.0,-57.0,0.0,50.0,0.0,0.0,0.0,0.0,0.016,0.3,0.25
+MED_GMM_2021Q4,Medical Non-Par LT,GMM,2024Q4,HKD,8080.0,385.0,815.0,0.0,0.0,0.0,0.0,-310.0,120.0,-140.0,0.0,38.36,-28.36,10.0,-25.0,0.0,0.0,0.0,0.0,0.016,0.2,0.25
+MED_GMM_ONEROUS_2020Q4,Medical Non-Par LT (Onerous),GMM,2024Q4,HKD,3212.0,162.0,0.0,130.0,0.0,0.0,0.0,-200.0,30.0,0.0,-70.0,13.9,-9.9,5.0,0.0,0.0,0.0,0.0,0.0,0.016,0.0,0.25
+MED_PAA_2024Q3,Medical Non-Par ST (PAA),PAA,2024Q4,HKD,615.0,30.0,0.0,0.0,0.0,0.0,0.0,0.0,15.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,-600.0,30.0,0.0,0.25,0.25
+RIDER_PAA_2024Q3,Rider Non-Par (PAA),PAA,2024Q4,HKD,408.0,20.0,0.0,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,-400.0,20.0,0.0,0.0,0.25
