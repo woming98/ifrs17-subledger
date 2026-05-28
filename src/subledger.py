@@ -26,11 +26,9 @@ GL 科目体系（见 chart_of_accounts.yaml）：
     5100 OCI — Insurance Finance
 """
 
-from __future__ import annotations
-
 import uuid
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 
 import yaml
 
@@ -151,8 +149,8 @@ class ChartOfAccounts:
 def generate_journal(
     aoc: AOCResult,
     coa: ChartOfAccounts,
-    rca: "RCASummary | None" = None,
-    rcas: "List[RCASummary] | None" = None,
+    rca: Optional[RCASummary] = None,
+    rcas: Optional[List[RCASummary]] = None,
 ) -> JournalBatch:
     """
     根据 AOCResult（直接业务 + 可选 RCA 列表）生成 GL 分录批。

@@ -17,8 +17,6 @@ IFRS 17 关键条款：
   IFRS 17.64:     亏损合同的分出 LC 同样确认为 RCA 资产
 """
 
-from __future__ import annotations
-
 import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, List, Optional
