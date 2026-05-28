@@ -65,6 +65,9 @@ class AOCResult:
     assumption_chg_csm: float = 0.0
     # 额外：汇率变动（FX translation）
     fx_effect: float = 0.0
+    # VFA 专用：基础项目变动（underlying items change）→ CSM 调整
+    # 该项为 intra-ICL 转账（PVFCF ↔ CSM），不影响 ICL 总额
+    underlying_items_chg: float = 0.0
 
     # ── 期末余额 ─────────────────────────────────────────────────────────────
     eom_pvfcf: float = 0.0
@@ -149,7 +152,7 @@ class AOCResult:
 
     def aoc_summary(self) -> dict:
         """Return all AOC movement items as a dict (used by reporting)."""
-        return {
+        d = {
             "BOM ICL": self.bom_icl,
             "① New Business": self.new_business,
             "② Expected CF Release (incl. RA)": self.expected_cf_release,
@@ -161,10 +164,13 @@ class AOCResult:
             "⑧ Assumption Change → P&L": self.assumption_chg_pl,
             "⑨ Assumption Change → CSM": self.assumption_chg_csm,
             "FX Effect": self.fx_effect,
-            "EOM ICL (Calculated)": self.bom_icl + self.total_movements,
-            "EOM ICL (Input)": self.eom_icl,
-            "Recon Diff": self.reconciliation_diff,
         }
+        if self.underlying_items_chg != 0.0:
+            d["VFA — Underlying Items Change → CSM"] = self.underlying_items_chg
+        d["EOM ICL (Calculated)"] = self.bom_icl + self.total_movements
+        d["EOM ICL (Input)"]      = self.eom_icl
+        d["Recon Diff"]           = self.reconciliation_diff
+        return d
 
 
 # ──────────────────────────────────────────────────────────────────────────────

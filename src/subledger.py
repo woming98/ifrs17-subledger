@@ -310,13 +310,28 @@ def generate_journal(
 
     # FX 汇率影响
     if abs(aoc.fx_effect) > 1e-6:
-        label = "FX 汇率影响"
+        label = "FX Effect"
         if aoc.fx_effect > 0:
             batch.add(label, OCI, coa.name(OCI), ICL_PVFCF, coa.name(ICL_PVFCF),
-                      aoc.fx_effect, ccy, "外币折算差异")
+                      aoc.fx_effect, ccy, "FX translation difference")
         else:
             batch.add(label, ICL_PVFCF, coa.name(ICL_PVFCF), OCI, coa.name(OCI),
                       abs(aoc.fx_effect), ccy)
+
+    # VFA: Underlying items change (intra-ICL PVFCF ↔ CSM)
+    if abs(aoc.underlying_items_chg) > 1e-6:
+        label = "VFA — Underlying Items Change → CSM"
+        if aoc.underlying_items_chg > 0:
+            # Underlying items appreciated → PVFCF liability increases (Dr ICL_PVFCF)
+            # but CSM absorbs it (Cr ICL_CSM) — net ICL unchanged
+            batch.add(label, ICL_PVFCF, coa.name(ICL_PVFCF), ICL_CSM, coa.name(ICL_CSM),
+                      aoc.underlying_items_chg, ccy,
+                      "Underlying items gain absorbed by CSM")
+        else:
+            # Market correction → CSM decreases (Dr ICL_CSM / Cr ICL_PVFCF)
+            batch.add(label, ICL_CSM, coa.name(ICL_CSM), ICL_PVFCF, coa.name(ICL_PVFCF),
+                      abs(aoc.underlying_items_chg), ccy,
+                      "Underlying items loss charged to CSM")
 
     # ====================================================================
     # 再保险 RCA 分录（若有分出）
