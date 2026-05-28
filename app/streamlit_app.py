@@ -1331,6 +1331,346 @@ This cohort demonstrates the **complete IFRS 17 onerous contract journey**
     else:
         st.info("MED_ONR_RECOVERY cohort not found in loaded data.")
 
+    # ══════════════════════════════════════════════════════════════════════
+    # CSM Run-off Projection
+    # ══════════════════════════════════════════════════════════════════════
+    st.divider()
+    st.subheader("📐 CSM Run-off Projection — Glide Path")
+    st.markdown("""
+Projects the **CSM amortisation trajectory** for each cohort, based on the historical
+quarterly amortisation rate observed in 2024.  This is the IFRS 17 equivalent of
+"how many years of profit are still locked in the book?"
+""")
+
+    # ── Compute historical amortisation rates from all_results ────────────
+    _fy_periods_ts = sorted(k for k in all_results if k.startswith("2024"))
+
+    # Default quarterly amort rates (used when < 1 quarter of history, e.g. newly-recovered)
+    _DEFAULT_AMORT_RATES = {"GMM": 0.12, "VFA": 0.035, "PAA": 0.25}
+
+    # Per cohort: collect (bom_csm, csm_amortisation) pairs from each quarter
+    _cohort_amort_info = {}   # cohort_id → {product, model, closing_csm, avg_rate}
+    for p in _fy_periods_ts:
+        for r in all_results[p]:
+            info = _cohort_amort_info.setdefault(r.cohort_id, {
+                "product": r.product,
+                "model":   r.measurement_model,
+                "closing_csm": 0.0,
+                "rates": [],
+            })
+            # Always update closing CSM
+            if r.eom_csm > 0:
+                info["closing_csm"] = r.eom_csm
+            # Rate only calculable when BOM > 0
+            if r.bom_csm > 0:
+                rate = -r.csm_amortisation / r.bom_csm   # positive fraction
+                info["rates"].append(rate)
+
+    # Fallback: cohorts with closing CSM but no history (e.g. newly-recovered Q4)
+    for cid, info in _cohort_amort_info.items():
+        if info["closing_csm"] > 0 and not info["rates"]:
+            info["rates"] = [_DEFAULT_AMORT_RATES.get(info["model"], 0.08)]
+            info["_default_rate"] = True
+
+    # ── Project 12 quarters (3 years) forward ────────────────────────────
+    _N_PROJ = 12    # quarters to project
+    _PROJ_PERIODS = [f"Q{i+1}" for i in range(_N_PROJ)]
+
+    _runoff_rows = []       # for table
+    _fig_runoff = go.Figure()
+
+    # Color palette
+    _model_pal = {"GMM": "#3b82f6", "VFA": "#8b5cf6", "PAA": "#22c55e"}
+
+    for cid, info in sorted(_cohort_amort_info.items()):
+        if info["closing_csm"] <= 0:
+            continue
+        avg_rate = (sum(info["rates"]) / len(info["rates"])) if info["rates"] else 0.05
+
+        # Three scenarios: base, fast (+25%), slow (-25%)
+        csm_base = info["closing_csm"]
+        proj_base, proj_fast, proj_slow = [], [], []
+        isr_base = []
+        csm_b, csm_f, csm_s = csm_base, csm_base, csm_base
+
+        for _ in range(_N_PROJ):
+            isr_base.append(round(csm_b * avg_rate, 1))
+            proj_base.append(round(csm_b, 1))
+            proj_fast.append(round(csm_f, 1))
+            proj_slow.append(round(csm_s, 1))
+            csm_b = max(0, csm_b * (1 - avg_rate))
+            csm_f = max(0, csm_f * (1 - avg_rate * 1.25))
+            csm_s = max(0, csm_s * (1 - avg_rate * 0.75))
+
+        color = _model_pal.get(info["model"], "#64748b")
+
+        # Base line (solid)
+        _fig_runoff.add_scatter(
+            x=_PROJ_PERIODS, y=proj_base,
+            name=f"{cid} (base)",
+            mode="lines+markers",
+            line=dict(width=2.5, color=color),
+            marker=dict(size=6),
+        )
+        # Scenario band (filled area between fast and slow)
+        _r = int(color[1:3], 16); _g = int(color[3:5], 16); _b = int(color[5:7], 16)
+        _fill_rgba = f"rgba({_r},{_g},{_b},0.10)"
+        _fig_runoff.add_scatter(
+            x=_PROJ_PERIODS + _PROJ_PERIODS[::-1],
+            y=proj_fast + proj_slow[::-1],
+            fill="toself",
+            fillcolor=_fill_rgba,
+            line=dict(width=0),
+            showlegend=False,
+            hoverinfo="skip",
+            name=f"{cid} range",
+        )
+
+        # Table row
+        _runoff_rows.append({
+            "Cohort":          cid,
+            "Model":           info["model"],
+            "Closing CSM":     round(info["closing_csm"], 0),
+            "Qtrly Amort Rate":f"{avg_rate*100:.1f}%",
+            "Quarters to Zero":int(round(-1 / (avg_rate + 1e-9) * 0.693 / 0.25))
+                               if avg_rate > 0.005 else 99,
+            "Proj ISR Q1":     round(info["closing_csm"] * avg_rate, 0),
+            "Proj ISR Q4":     round(isr_base[3], 0) if len(isr_base) > 3 else 0,
+            "Proj ISR Q8":     round(isr_base[7], 0) if len(isr_base) > 7 else 0,
+            "Proj CSM Yr3":    round(proj_base[-1], 0),
+        })
+
+    _fig_runoff.update_layout(
+        title="CSM Glide Path — Base (solid) with ±25% Amortisation Speed Range ('000 HKD)",
+        height=430, margin=dict(l=40, r=40, t=60, b=40),
+        xaxis_title="Projected Quarter (from 31 Dec 2024)",
+        yaxis_title="CSM Balance ('000 HKD)",
+        legend=dict(orientation="v", x=1.01, y=1),
+    )
+
+    if _runoff_rows:
+        _col_proj_chart, _col_proj_table = st.columns([3, 2])
+        with _col_proj_chart:
+            st.plotly_chart(_fig_runoff, use_container_width=True)
+        with _col_proj_table:
+            _runoff_df = pd.DataFrame(_runoff_rows)
+            st.caption("**CSM Run-off Summary** — projected from 31 Dec 2024")
+            st.dataframe(
+                _runoff_df.style
+                    .format({"Closing CSM": "{:,.0f}",
+                             "Proj ISR Q1": "{:,.0f}",
+                             "Proj ISR Q4": "{:,.0f}",
+                             "Proj ISR Q8": "{:,.0f}",
+                             "Proj CSM Yr3": "{:,.0f}"})
+                    .bar(subset=["Closing CSM"], color="#bfdbfe", vmin=0)
+                    .highlight_min(subset=["Quarters to Zero"], color="#fef3c7"),
+                use_container_width=True, height=330,
+            )
+
+        st.info("""
+**How to read this chart:**
+- **Solid line** = base case projection using 2024 average quarterly amortisation rate
+- **Shaded band** = range between 25%-faster (upper bound) and 25%-slower (lower bound) amortisation
+- **"Quarters to Zero"** ≈ the half-life estimate of the CSM (ln(2) / quarterly rate × 4 qtrs / yr)
+- The steeper the decline, the faster profits are recognised as Insurance Revenue
+- VFA CSMs are more volatile (market-linked); GMM CSMs decline steadily
+
+*Note: This is a simplified run-off assuming constant coverage unit pattern.  
+In practice, actuaries use coverage unit schedules (e.g., in-force policies, sums insured) per IFRS 17.B119.*
+""")
+    else:
+        st.info("No profitable cohorts with CSM > 0 found.")
+
+    # ══════════════════════════════════════════════════════════════════════
+    # OCI Reserve Accumulation
+    # ══════════════════════════════════════════════════════════════════════
+    st.divider()
+    st.subheader("📊 OCI Reserve — Cumulative Accumulation")
+    st.markdown("""
+Under the **OCI option** (applied to GMM cohorts), the difference between the
+current discount rate and the locked-in DAIR flows through **Other Comprehensive Income**
+rather than P&L.  This builds up an **OCI Reserve** in shareholders' equity over time
+— which reverses to P&L as contracts mature.
+""")
+
+    # ── Build OCI accumulation from all_results ───────────────────────────
+    _all_periods_sorted = sorted(all_results.keys())
+
+    # Per cohort: running OCI reserve
+    _oci_by_cohort = {}    # cohort_id → {model, period_label, cumulative_oci}
+    _oci_portfolio = {}    # period → portfolio cumulative OCI
+
+    _running_cohort_oci = {}  # cohort_id → running total
+    _running_port_oci = 0.0
+
+    for p in _all_periods_sorted:
+        _period_port_oci = 0.0
+        for r in all_results[p]:
+            cid = r.cohort_id
+            _running_cohort_oci[cid] = _running_cohort_oci.get(cid, 0.0) + r.finance_charge_oci
+
+            if cid not in _oci_by_cohort:
+                _oci_by_cohort[cid] = {"model": r.measurement_model, "periods": [], "oci_cum": [], "oci_qtr": []}
+            _oci_by_cohort[cid]["periods"].append(p)
+            _oci_by_cohort[cid]["oci_cum"].append(round(_running_cohort_oci[cid], 2))
+            _oci_by_cohort[cid]["oci_qtr"].append(round(r.finance_charge_oci, 2))
+            _period_port_oci += r.finance_charge_oci
+
+        _running_port_oci += _period_port_oci
+        _oci_portfolio[p] = round(_running_port_oci, 2)
+
+    _oci_periods = sorted(_oci_portfolio.keys())
+
+    # ── Plot cumulative OCI by cohort + portfolio total ───────────────────
+    _col_oci_l, _col_oci_r = st.columns([3, 2])
+
+    with _col_oci_l:
+        fig_oci = go.Figure()
+
+        # Cohort lines (only GMM ones with OCI)
+        for cid, data in _oci_by_cohort.items():
+            if data["model"] != "GMM":
+                continue
+            if all(v == 0 for v in data["oci_cum"]):
+                continue
+            fig_oci.add_scatter(
+                x=data["periods"], y=data["oci_cum"],
+                name=f"{cid}",
+                mode="lines+markers",
+                line=dict(width=1.5, dash="dot"),
+                marker=dict(size=5),
+            )
+
+        # Portfolio total (bold)
+        fig_oci.add_scatter(
+            x=_oci_periods,
+            y=[_oci_portfolio[p] for p in _oci_periods],
+            name="Portfolio Total",
+            mode="lines+markers",
+            line=dict(width=3.5, color="#1d4ed8"),
+            marker=dict(size=9, symbol="diamond"),
+            fill="tozeroy", fillcolor="rgba(59,130,246,0.08)",
+        )
+
+        fig_oci.add_hline(y=0, line_dash="solid", line_color="#94a3b8", line_width=1)
+        fig_oci.update_layout(
+            title="Cumulative OCI Reserve — Building in Shareholders' Equity ('000 HKD)",
+            height=380, margin=dict(l=40, r=40, t=60, b=40),
+            xaxis_title="Period", yaxis_title="Cumulative OCI Reserve ('000 HKD)",
+            legend=dict(orientation="v", x=1.01, y=1),
+        )
+        st.plotly_chart(fig_oci, use_container_width=True)
+
+        # Quarterly OCI waterfall (portfolio)
+        with st.expander("📊 Quarterly OCI Flow — Portfolio"):
+            _port_qtr_oci = []
+            for p in _oci_periods:
+                _q_total = sum(
+                    data["oci_qtr"][data["periods"].index(p)]
+                    for data in _oci_by_cohort.values()
+                    if p in data["periods"]
+                )
+                _port_qtr_oci.append(_q_total)
+
+            fig_qtr_oci = go.Figure()
+            fig_qtr_oci.add_bar(
+                x=_oci_periods, y=_port_qtr_oci,
+                marker_color=["#22c55e" if v < 0 else "#ef4444" for v in _port_qtr_oci],
+                text=[f"{v:+,.1f}" for v in _port_qtr_oci],
+                textposition="outside",
+            )
+            fig_qtr_oci.add_hline(y=0, line_color="#94a3b8")
+            fig_qtr_oci.update_layout(
+                title="Quarterly OCI Flow — Positive = OCI Expense, Negative = OCI Income",
+                height=280, margin=dict(l=20, r=20, t=50, b=30),
+                showlegend=False,
+            )
+            st.plotly_chart(fig_qtr_oci, use_container_width=True)
+
+    with _col_oci_r:
+        # OCI Reserve summary table
+        st.caption("**Closing OCI Reserve by Cohort** (31 Dec 2024)")
+        _oci_summary_rows = []
+        for cid, data in sorted(_oci_by_cohort.items()):
+            if not data["oci_cum"]:
+                continue
+            _total = data["oci_cum"][-1]
+            if abs(_total) < 0.01:
+                continue
+            _oci_summary_rows.append({
+                "Cohort":         cid,
+                "Model":          data["model"],
+                "OCI Reserve":    round(_total, 1),
+                "Equity Impact":  "↑ Equity" if _total < 0 else "↓ Equity",
+            })
+        _oci_summary_rows.append({
+            "Cohort":         "TOTAL",
+            "Model":          "",
+            "OCI Reserve":    round(_oci_portfolio.get(_oci_periods[-1], 0), 1) if _oci_periods else 0,
+            "Equity Impact":  "",
+        })
+        _oci_summary_df = pd.DataFrame(_oci_summary_rows)
+
+        def _oci_style(row):
+            if row["Cohort"] == "TOTAL":
+                return ["font-weight:700; background-color:#f0f4ff"] * len(row)
+            return [""] * len(row)
+
+        st.dataframe(
+            _oci_summary_df.style.apply(_oci_style, axis=1)
+                .format({"OCI Reserve": "{:+,.1f}"})
+                .map(lambda v: "color:#16a34a" if isinstance(v, float) and v < 0 else
+                               ("color:#dc2626" if isinstance(v, float) and v > 0 else ""),
+                     subset=["OCI Reserve"]),
+            use_container_width=True, height=320,
+        )
+
+        # ── Rate shock impact calculator ──────────────────────────────────
+        st.markdown("---")
+        st.caption("**What-if: Rate Shock on OCI Reserve**")
+        _rate_shock_oci = st.slider(
+            "Parallel rate shift (bps)",
+            min_value=-300, max_value=300, value=0, step=25,
+            key="oci_rate_shock",
+            help="Estimate OCI impact of a one-off parallel yield curve shift",
+        )
+
+        if _rate_shock_oci != 0:
+            # OCI impact ≈ -Duration × PVFCF × Δrate  (for GMM cohorts only)
+            _DURATION_OCI = {"GMM": 8.0, "VFA": 0.0, "PAA": 0.0}
+            _oci_shock_total = 0.0
+            _oci_shock_rows = []
+            for r in _last_aoc:
+                dur = _DURATION_OCI.get(r.measurement_model, 0.0)
+                delta = -(dur * r.eom_pvfcf * _rate_shock_oci / 10000)
+                if abs(delta) > 0.1:
+                    _oci_shock_rows.append({"Cohort": r.cohort_id, "ΔOCI": round(delta, 0)})
+                    _oci_shock_total += delta
+
+            _sign = "+" if _oci_shock_total > 0 else ""
+            if _oci_shock_total > 0:
+                st.error(f"OCI Reserve change: **{_sign}{_oci_shock_total:,.0f}** '000 HKD  \n"
+                         f"→ Shareholders' equity **decreases** (OCI expense)")
+            else:
+                st.success(f"OCI Reserve change: **{_sign}{_oci_shock_total:,.0f}** '000 HKD  \n"
+                           f"→ Shareholders' equity **increases** (OCI income)")
+            if _oci_shock_rows:
+                st.dataframe(pd.DataFrame(_oci_shock_rows).style.format({"ΔOCI": "{:+,.0f}"}),
+                             use_container_width=True, height=200, hide_index=True)
+        else:
+            st.caption("Move the slider to estimate the OCI impact of a rate shock.")
+
+    st.info("""
+**IFRS 17 OCI Reserve mechanics:**
+- **Negative** reserve (cumulative OCI income) → builds equity → typical in a **falling rate** environment
+  (current rate < DAIR → ICL increases → but routed to OCI not P&L)
+- **Positive** reserve (cumulative OCI expense) → reduces equity → typical in a **rising rate** environment
+- The OCI reserve is recycled to P&L gradually as the underlying contracts mature/expire
+- Under PAA and VFA (non-OCI option), this mechanism doesn't apply — IFIE goes fully to P&L
+- **Practical implication:** A rising-rate environment silently erodes insurance company equity
+  (visible in OCI, not P&L) — a key risk for IFRS 17 preparers
+""")
+
     # ── Raw time series table ─────────────────────────────────────────────
     with st.expander("View raw time series data"):
         st.dataframe(
