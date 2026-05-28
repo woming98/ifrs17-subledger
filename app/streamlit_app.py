@@ -128,6 +128,11 @@ with st.sidebar:
     tol = st.number_input("Reconciliation tolerance", value=0.01, step=0.01, format="%.3f")
 
     run_btn = st.button("▶  Run Subledger", type="primary", use_container_width=True)
+    if run_btn:
+        st.session_state["has_run"] = True
+    if st.sidebar.button("🔄 Reset", use_container_width=True):
+        st.session_state["has_run"] = False
+        st.rerun()
 
     st.divider()
     st.caption("**Cohorts in demo**")
@@ -154,7 +159,7 @@ st.markdown("""
 > **Reinsurance**: 3-treaty layered XL (Hanover Re / Munich Re / BOC Re) for TERM cohort
 """)
 
-if not run_btn:
+if not st.session_state.get("has_run", False):
     st.info("Click **▶ Run Subledger** in the sidebar to start.")
     st.markdown("""
 **What's in this demo?**
