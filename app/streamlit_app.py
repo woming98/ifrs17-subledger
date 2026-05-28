@@ -989,8 +989,98 @@ with tab_ts:
     )
     st.plotly_chart(fig_csm, use_container_width=True)
 
-    # ── Chart 4: VFA underlying items change ─────────────────────────────
-    st.subheader("VFA — Underlying Items Change vs CSM Movement")
+    # ── Chart 4: CSM Change Decomposition — VFA vs GMM ──────────────────
+    st.subheader("CSM Change Decomposition — VFA vs GMM (per quarter)")
+    st.markdown("""
+**This chart proves the volatility claim.** Each bar is broken into its drivers:
+- 🟣 **Underlying Items** (VFA only) — investment return absorbed by CSM; this is the volatile component
+- 🔴 **CSM Amortisation** — steady release of profit margin (both models)
+- 🟡 **Assumption Changes** — non-economic assumption revisions
+- 🟢 **Experience Variance (underlying)** — VFA-specific experience vs expected
+""")
+
+    # 只取 WL_VFA_2019 和 TERM_GMM_2022 做对比（代表性最强）
+    _COMPARE = ["WL_VFA_2019", "TERM_GMM_2022"]
+    _decomp = ts_df[ts_df["cohort_id"].isin(_COMPARE)].copy()
+
+    _fig_decomp = go.Figure()
+    _colors = {
+        "underlying_items_chg": "#7c3aed",   # purple
+        "csm_amortisation":     "#ef4444",   # red
+        "assumption_chg_csm":   "#f59e0b",   # amber
+        "exp_var_underlying":   "#22c55e",   # green
+    }
+    _labels = {
+        "underlying_items_chg": "Underlying Items (VFA)",
+        "csm_amortisation":     "CSM Amortisation",
+        "assumption_chg_csm":   "Assumption Changes → CSM",
+        "exp_var_underlying":   "Exp. Variance Underlying (VFA)",
+    }
+
+    for cid in _COMPARE:
+        _d = _decomp[_decomp["cohort_id"] == cid].sort_values("period")
+        for col, color in _colors.items():
+            if col not in _d.columns:
+                continue
+            _vals = _d[col].fillna(0).tolist()
+            if all(abs(v) < 1 for v in _vals):
+                continue
+            _fig_decomp.add_bar(
+                name=f"{cid[:10]} — {_labels[col]}",
+                x=[f"{p}<br>{cid[:8]}" for p in _d["period"]],
+                y=_vals,
+                marker_color=color,
+                opacity=0.82,
+                legendgroup=col,
+                showlegend=True,
+            )
+
+    _fig_decomp.update_layout(
+        barmode="relative",
+        title="CSM Drivers: WL_VFA_2019 vs TERM_GMM_2022 — quarterly ('000 HKD)",
+        height=440, margin=dict(l=40, r=40, t=60, b=60),
+        yaxis_title="CSM Change ('000 HKD)",
+        xaxis_title="Period / Cohort",
+        legend=dict(orientation="h", y=-0.25),
+    )
+    st.plotly_chart(_fig_decomp, use_container_width=True)
+
+    # 数字表格证明
+    with st.expander("📋 Show underlying data (CSM change by driver)"):
+        _tbl_rows = []
+        for cid in _COMPARE:
+            _d = _decomp[_decomp["cohort_id"] == cid].sort_values("period")
+            for _, row in _d.iterrows():
+                _und = row.get("underlying_items_chg", 0) or 0
+                _amort = row.get("csm_amortisation", 0) or 0
+                _assump = row.get("assumption_chg_csm", 0) or 0
+                _expv = row.get("exp_var_underlying", 0) or 0
+                _net = _und + _amort + _assump + _expv
+                _tbl_rows.append({
+                    "Cohort": cid,
+                    "Period": row["period"],
+                    "Model": row["model"],
+                    "Underlying Items": round(_und, 1),
+                    "CSM Amortisation": round(_amort, 1),
+                    "Assumption Chg": round(_assump, 1),
+                    "Exp. Var. Underlying": round(_expv, 1),
+                    "Net CSM Change": round(_net, 1),
+                })
+        _tbl_df = pd.DataFrame(_tbl_rows)
+        _tbl_cfg = {c: st.column_config.NumberColumn(c, format="%+,.1f")
+                    for c in ["Underlying Items","CSM Amortisation","Assumption Chg",
+                              "Exp. Var. Underlying","Net CSM Change"]}
+        st.dataframe(_tbl_df, use_container_width=True, hide_index=True,
+                     column_config=_tbl_cfg)
+        st.caption("""
+**Reading guide:**
+- TERM_GMM_2022: Net CSM change ≈ Amortisation only (steady −260 per quarter)
+- WL_VFA_2019:   Net CSM change = Amortisation + **large Underlying swings** (Q1: +1,200 / Q2: −900)
+- The Underlying Items component is absent in GMM → this is the key volatility driver in VFA
+""")
+
+    # 原 underlying bar chart 保留（仅 VFA）
+    st.markdown("**VFA cohorts — Underlying Items absorbed by CSM each quarter:**")
     fig_und = go.Figure()
     vfa_ts = ts_df[ts_df["model"] == "VFA"]
     for cid in vfa_ts["cohort_id"].unique():
@@ -1000,7 +1090,7 @@ with tab_ts:
     fig_und.update_layout(
         barmode="group",
         title="VFA: Quarterly Underlying Items Change (absorbed by CSM) — '000 HKD",
-        height=340, margin=dict(l=40, r=40, t=60, b=40),
+        height=320, margin=dict(l=40, r=40, t=60, b=40),
     )
     st.plotly_chart(fig_und, use_container_width=True)
 
