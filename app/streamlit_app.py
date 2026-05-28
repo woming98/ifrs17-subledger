@@ -129,6 +129,16 @@ with st.sidebar:
             st.error("Demo data not found.\nRun: `python data/generate_multi_period.py`")
             st.stop()
         st.success("✓ Demo data: actuarial_output.csv")
+        # 下载 demo CSV 按钮
+        with open(data_file, "rb") as _f:
+            st.download_button(
+                "⬇ Download demo CSV",
+                data=_f.read(),
+                file_name="actuarial_output.csv",
+                mime="text/csv",
+                use_container_width=True,
+                help="Download the demo actuarial_output.csv to inspect the input format",
+            )
 
     st.divider()
     st.subheader("⚙️ Settings")
