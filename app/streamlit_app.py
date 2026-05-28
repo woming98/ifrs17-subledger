@@ -83,11 +83,44 @@ with st.sidebar:
 
     st.divider()
     st.subheader("📥 Data Source")
-    data_file = os.path.join(_DATA_DIR, "actuarial_output.csv")
-    if not os.path.exists(data_file):
-        st.error("Multi-period data not found.\nPlease run:\n`python data/generate_multi_period.py`")
-        st.stop()
-    st.success(f"✓ actuarial_output.csv loaded")
+
+    # ── 自定义 CSV 上传（O 功能）──────────────────────────────────────────
+    _REQUIRED_COLS = {
+        "cohort_id", "product", "measurement_model", "period",
+        "pvfcf_eom", "ra_eom", "csm_eom",
+        "exp_cf_release", "csm_amortisation", "finance_charge_pl",
+    }
+    uploaded_file = st.file_uploader(
+        "Upload custom actuarial CSV", type=["csv"],
+        help="Optional: upload your own actuarial output to replace the demo data.\n"
+             "Required columns: cohort_id, product, measurement_model, period, "
+             "pvfcf_eom, ra_eom, csm_eom, exp_cf_release, csm_amortisation, finance_charge_pl",
+    )
+
+    if uploaded_file is not None:
+        try:
+            _uploaded_df = pd.read_csv(uploaded_file)
+            _missing = _REQUIRED_COLS - set(_uploaded_df.columns)
+            if _missing:
+                st.error(f"Missing columns: {', '.join(sorted(_missing))}")
+                uploaded_file = None
+            else:
+                _tmp_path = os.path.join(_DATA_DIR, "_uploaded_tmp.csv")
+                _uploaded_df.to_csv(_tmp_path, index=False)
+                data_file = _tmp_path
+                st.success(f"✓ Uploaded: {uploaded_file.name}  ({len(_uploaded_df)} rows)")
+                with st.expander("Preview uploaded data", expanded=False):
+                    st.dataframe(_uploaded_df.head(8), use_container_width=True)
+        except Exception as e:
+            st.error(f"Failed to read CSV: {e}")
+            uploaded_file = None
+
+    if uploaded_file is None:
+        data_file = os.path.join(_DATA_DIR, "actuarial_output.csv")
+        if not os.path.exists(data_file):
+            st.error("Demo data not found.\nRun: `python data/generate_multi_period.py`")
+            st.stop()
+        st.success("✓ Demo data: actuarial_output.csv")
 
     st.divider()
     st.subheader("⚙️ Settings")
@@ -117,7 +150,7 @@ with st.sidebar:
 st.title("📊 IFRS 17 Subledger — Full Process Demo")
 st.markdown("""
 > **Coverage**: GMM · PAA · **VFA** · Quota Share + **Layered XL** RCA · AOC 9-step decomposition  
-> **Multi-period**: 7 cohorts × 4 quarters (2024Q1–Q4) · Time series analytics  
+> **Multi-period**: 7 cohorts × 4 quarters · **Sensitivity analysis** · Custom CSV upload  
 > **Reinsurance**: 3-treaty layered XL (Hanover Re / Munich Re / BOC Re) for TERM cohort
 """)
 
@@ -263,7 +296,7 @@ c6.metric("Reconciliation",           "✅ All passed" if all_ok else "❌ Error
 # Tabs
 # ──────────────────────────────────────────────────────────────────────────────
 
-tab_aoc, tab_pl, tab_bs, tab_gl, tab_tb, tab_recon, tab_ts, tab_how = st.tabs([
+tab_aoc, tab_pl, tab_bs, tab_gl, tab_tb, tab_recon, tab_ts, tab_sens, tab_how = st.tabs([
     "📈 AOC Waterfall",
     "💹 P&L Summary",
     "🏦 Balance Sheet",
@@ -271,6 +304,7 @@ tab_aoc, tab_pl, tab_bs, tab_gl, tab_tb, tab_recon, tab_ts, tab_how = st.tabs([
     "⚖️ Trial Balance",
     "✅ Reconciliation",
     "📉 Time Series",
+    "🎯 Sensitivity",
     "📖 How It Works",
 ])
 
@@ -623,7 +657,219 @@ with tab_ts:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Tab 8 — How It Works (NEW)
+# ══════════════════════════════════════════════════════════════════════════════
+# Tab 8 — Sensitivity Analysis (H)
+# ══════════════════════════════════════════════════════════════════════════════
+
+with tab_sens:
+    st.markdown("## 🎯 Sensitivity Analysis")
+    st.markdown("""
+Adjust the shock parameters below to see how key IFRS 17 metrics respond.
+All impacts are **approximate parametric estimates** — the same approach used in
+actuarial sensitivity testing before full re-projection.
+""")
+
+    # ── Duration assumptions per model ───────────────────────────────────
+    _DURATION = {"GMM": 8.0, "VFA": 12.0, "PAA": 0.5}
+    # Expense proportion of PVFCF (approximate)
+    _EXPENSE_PCT = 0.18
+
+    # ── Sliders ──────────────────────────────────────────────────────────
+    sc1, sc2, sc3 = st.columns(3)
+    with sc1:
+        rate_shock = st.slider(
+            "📐 Interest rate shock (bps)",
+            min_value=-300, max_value=300, value=0, step=25,
+            help="Parallel shift in discount curve.\n"
+                 "ΔPVFCF = −Duration × PVFCF × Δrate\n"
+                 "Profitable GMM/VFA: absorbed by CSM (no P&L)\n"
+                 "Onerous / PAA: flows to P&L",
+        )
+    with sc2:
+        mortality_shock = st.slider(
+            "💀 Mortality / morbidity shock (%)",
+            min_value=-30, max_value=30, value=0, step=5,
+            help="Percentage change in expected claims.\n"
+                 "Profitable GMM/VFA: absorbed by CSM\n"
+                 "Onerous / PAA: flows to P&L",
+        )
+    with sc3:
+        expense_shock = st.slider(
+            "💼 Expense shock (%)",
+            min_value=-20, max_value=20, value=0, step=5,
+            help="Percentage change in maintenance expenses.\n"
+                 "ΔPVFCF ≈ expense_proportion × PVFCF × Δexpense\n"
+                 "Same routing as mortality shock.",
+        )
+
+    # ── Compute impacts ──────────────────────────────────────────────────
+    def _sensitivity_rows(aoc_list_in, rate_bps, mort_pct, exp_pct):
+        rows = []
+        for a in aoc_list_in:
+            model = a.measurement_model
+            dur   = _DURATION.get(model, 8.0)
+
+            # Rate shock → ΔPVFCF
+            d_pvfcf_rate  = -dur * a.eom_pvfcf * (rate_bps / 10000)
+
+            # Mortality shock → approximate ΔPVFCF
+            # Expected annual claims ≈ exp_cf_release × 4 (quarterly → annual)
+            # Remaining coverage ≈ |CSM / csm_amortisation| periods
+            annual_claims = abs(a.expected_cf_release) * 4
+            if abs(a.csm_amortisation) > 1e-3:
+                remaining_periods = min(abs(a.eom_csm / a.csm_amortisation), 40)
+            else:
+                remaining_periods = 8
+            d_pvfcf_mort = annual_claims * (mort_pct / 100) * remaining_periods * 0.25
+
+            # Expense shock → approximate ΔPVFCF
+            d_pvfcf_exp = _EXPENSE_PCT * abs(a.eom_pvfcf) * (exp_pct / 100)
+
+            d_pvfcf_total = d_pvfcf_rate + d_pvfcf_mort + d_pvfcf_exp
+
+            # Route: CSM absorbs for profitable GMM/VFA; P&L for onerous/PAA
+            is_profitable_bba = (a.eom_csm > 0 and model in ("GMM", "VFA"))
+            if is_profitable_bba:
+                d_csm = -d_pvfcf_total   # CSM absorbs (negative = CSM decreases when PVFCF rises)
+                d_icl =  0.0             # Net ICL unchanged (PVFCF up, CSM down equally)
+                d_pl  =  0.0
+            else:
+                d_csm =  0.0
+                d_icl =  d_pvfcf_total
+                d_pl  =  d_pvfcf_total   # Goes straight to P&L / LC
+
+            rows.append({
+                "cohort_id":       a.cohort_id,
+                "model":           model,
+                "product":         a.product,
+                "eom_icl":         round(a.eom_icl, 0),
+                "eom_csm":         round(a.eom_csm, 0),
+                "Δ PVFCF (rate)":  round(d_pvfcf_rate, 0),
+                "Δ PVFCF (mort)":  round(d_pvfcf_mort, 0),
+                "Δ PVFCF (exp)":   round(d_pvfcf_exp,  0),
+                "Δ ICL":           round(d_icl, 0),
+                "Δ CSM":           round(d_csm, 0),
+                "Δ P&L":           round(d_pl, 0),
+            })
+        return pd.DataFrame(rows)
+
+    sens_df = _sensitivity_rows(aoc_list, rate_shock, mortality_shock, expense_shock)
+
+    if sens_df.empty:
+        st.info("Run the subledger first to enable sensitivity analysis.")
+    else:
+        total_d_icl = sens_df["Δ ICL"].sum()
+        total_d_csm = sens_df["Δ CSM"].sum()
+        total_d_pl  = sens_df["Δ P&L"].sum()
+
+        # ── KPI delta cards ──────────────────────────────────────────────
+        sk1, sk2, sk3 = st.columns(3)
+        sk1.metric("Δ Net ICL",  f"{total_d_icl:+,.0f}", help="Change in total Insurance Contract Liability")
+        sk2.metric("Δ CSM",      f"{total_d_csm:+,.0f}", help="Change in Contractual Service Margin (profitable)")
+        sk3.metric("Δ P&L",      f"{total_d_pl:+,.0f}",  help="Change in Net P&L (onerous + PAA)")
+
+        # ── Tornado chart ────────────────────────────────────────────────
+        st.markdown("#### 🌪️ Tornado Chart — Portfolio Impact")
+        st.caption("Shows approximate impact of each shock component on each metric (current slider values).")
+
+        tornado_data = {
+            "Shock": ["Rate shock", "Mortality shock", "Expense shock"] * 3,
+            "Metric": (["Δ ICL"] * 3) + (["Δ CSM"] * 3) + (["Δ P&L"] * 3),
+            "Impact": [
+                sens_df["Δ PVFCF (rate)"].sum() if total_d_icl != 0 else 0,
+                sens_df["Δ PVFCF (mort)"].sum() if total_d_icl != 0 else 0,
+                sens_df["Δ PVFCF (exp)"].sum()  if total_d_icl != 0 else 0,
+                -sens_df["Δ PVFCF (rate)"][sens_df["Δ CSM"] != 0].sum(),
+                -sens_df["Δ PVFCF (mort)"][sens_df["Δ CSM"] != 0].sum(),
+                -sens_df["Δ PVFCF (exp)"][sens_df["Δ CSM"] != 0].sum(),
+                sens_df["Δ PVFCF (rate)"][sens_df["Δ P&L"] != 0].sum(),
+                sens_df["Δ PVFCF (mort)"][sens_df["Δ P&L"] != 0].sum(),
+                sens_df["Δ PVFCF (exp)"][sens_df["Δ P&L"] != 0].sum(),
+            ],
+        }
+        t_df = pd.DataFrame(tornado_data)
+        t_df = t_df[t_df["Impact"].abs() > 0.1]
+
+        if not t_df.empty:
+            fig_tornado = px.bar(
+                t_df, x="Impact", y="Shock", color="Metric",
+                orientation="h", barmode="group",
+                color_discrete_map={"Δ ICL": "#3b82f6", "Δ CSM": "#f59e0b", "Δ P&L": "#ef4444"},
+                title=f"Sensitivity Impact — {sel_period}",
+            )
+            fig_tornado.add_vline(x=0, line_dash="dash", line_color="gray")
+            fig_tornado.update_layout(height=360, margin=dict(l=40, r=40, t=60, b=40))
+            st.plotly_chart(fig_tornado, use_container_width=True)
+        else:
+            st.info("Move the sliders to see the tornado chart.")
+
+        # ── Standard scenario comparison ─────────────────────────────────
+        st.markdown("#### 📊 Standard Scenarios — Portfolio Summary")
+        st.caption("Pre-computed sensitivities for standard shocks (independent, single-factor).")
+
+        scenarios = [
+            ("Rate +100bps",   100,  0,  0),
+            ("Rate −100bps",  -100,  0,  0),
+            ("Rate +200bps",   200,  0,  0),
+            ("Rate −200bps",  -200,  0,  0),
+            ("Mortality +10%",   0, 10,  0),
+            ("Mortality −10%",   0,-10,  0),
+            ("Mortality +20%",   0, 20,  0),
+            ("Expense +10%",     0,  0, 10),
+            ("Expense −10%",     0,  0,-10),
+        ]
+        scen_rows = []
+        for label, r, m, e in scenarios:
+            df_s = _sensitivity_rows(aoc_list, r, m, e)
+            scen_rows.append({
+                "Scenario":  label,
+                "Δ ICL":     df_s["Δ ICL"].sum(),
+                "Δ CSM":     df_s["Δ CSM"].sum(),
+                "Δ P&L":     df_s["Δ P&L"].sum(),
+                "ICL % chg": f"{df_s['Δ ICL'].sum() / max(abs(total_icl), 1) * 100:+.2f}%",
+                "P&L % chg": f"{df_s['Δ P&L'].sum() / max(abs(total_isr), 1) * 100:+.2f}%",
+            })
+        scen_df = pd.DataFrame(scen_rows)
+
+        def _color_impact(val):
+            if isinstance(val, (int, float)):
+                if val > 0: return "color:#dc2626"
+                if val < 0: return "color:#16a34a"
+            return ""
+
+        st.dataframe(
+            scen_df.style
+                .format({"Δ ICL": "{:+,.0f}", "Δ CSM": "{:+,.0f}", "Δ P&L": "{:+,.0f}"})
+                .map(_color_impact, subset=["Δ ICL", "Δ CSM", "Δ P&L"]),
+            use_container_width=True, height=360,
+        )
+
+        # ── Per-cohort breakdown ──────────────────────────────────────────
+        st.markdown("#### 🔍 Per-Cohort Breakdown (current sliders)")
+        num_cols_s = ["eom_icl", "eom_csm", "Δ PVFCF (rate)", "Δ PVFCF (mort)",
+                      "Δ PVFCF (exp)", "Δ ICL", "Δ CSM", "Δ P&L"]
+        st.dataframe(
+            sens_df.style
+                .format({c: "{:+,.0f}" for c in ["Δ PVFCF (rate)", "Δ PVFCF (mort)",
+                                                   "Δ PVFCF (exp)", "Δ ICL", "Δ CSM", "Δ P&L"]})
+                .format({c: "{:,.0f}" for c in ["eom_icl", "eom_csm"]})
+                .map(_color_impact, subset=["Δ ICL", "Δ CSM", "Δ P&L"]),
+            use_container_width=True,
+            height=min(80 + len(sens_df) * 35, 380),
+        )
+
+        st.caption("""
+**Methodology note**: Impacts are parametric approximations.
+Rate sensitivity uses modified duration (GMM 8y · VFA 12y · PAA 0.5y).
+Mortality sensitivity uses remaining coverage units derived from CSM/amortisation ratio.
+Expense sensitivity uses 18% of PVFCF as the expense proportion.
+For profitable GMM/VFA cohorts: ΔPVFCF is fully absorbed by CSM (ΔICL = 0, ΔP&L = 0).
+For onerous contracts and PAA: ΔPVFCF flows to ICL and P&L.
+""")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Tab 9 — How It Works (NEW)
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tab_how:
