@@ -23,19 +23,19 @@ treaties:
   - treaty_id:              TERM_HAN
     cohort_id:              TERM_GMM_2022
     reinsurer:              "Hanover Re"
-    layer_label:            "XL L1 (0–300k)"
+    layer_label:            "XL 12%"
     effective_cession_rate: 0.12
 
   - treaty_id:              TERM_MR
     cohort_id:              TERM_GMM_2022
     reinsurer:              "Munich Re"
-    layer_label:            "XL L2 (300k–600k)"
+    layer_label:            "XL 8%"
     effective_cession_rate: 0.08
 
   - treaty_id:              TERM_BOC
     cohort_id:              TERM_GMM_2022
     reinsurer:              "BOC Re"
-    layer_label:            "XL L2 (300k–600k)"
+    layer_label:            "XL 32%"
     effective_cession_rate: 0.32
 
   # ── MED_GMM_2021: Quota Share ─────────────────────────────────────────────────
