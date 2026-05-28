@@ -37,7 +37,7 @@ from src.reconciliation import reconcile_portfolio, check_journal_balance, aoc_w
 from src.analytics import build_timeseries, portfolio_timeseries, project_csm_runoff
 from src.report import (
     pl_summary, bs_summary, aoc_detail, gl_detail, trial_balance,
-    write_formatted_excel,
+    write_formatted_excel, write_pdf_report,
 )
 from src.disclosures import (
     note1_icl_movement, note2_icl_components,
@@ -165,6 +165,33 @@ with st.sidebar:
 - <span class="badge-vfa">VFA</span> WL_VFA_2019 — Whole Life Par · QS 20% Swiss Re
 - <span class="badge-vfa">VFA</span> ENDO_VFA_2022 — Endowment Par · No RI
 """, unsafe_allow_html=True)
+
+    st.divider()
+    with st.expander("ℹ️ About This Demo"):
+        st.markdown("""
+**IFRS 17 Subledger — Full Process Demo**
+
+A portfolio project demonstrating the complete IFRS 17
+data pipeline from actuarial output to GL entries and
+regulatory disclosures.
+
+**All data is synthetic** — generated for illustration only.
+No real insurance portfolios are represented.
+
+**Stack**: Python · Streamlit · Plotly · pandas · openpyxl
+
+**Concepts covered**:
+GMM · PAA · VFA · Quota Share · Layered XL ·
+AOC 9-item · OCI option · Onerous lifecycle ·
+Disclosure Notes 1–6 · CSM Run-off projection
+
+---
+📂 [GitHub](https://github.com/woming98/ifrs17-subledger)  
+🚀 [Live App](https://ifrs17-subledger.streamlit.app/)
+
+*Feel free to fork and adapt for your own actuarial
+or finance modelling projects.*
+""")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -844,7 +871,46 @@ with tab_gl:
         "debit":  st.column_config.NumberColumn("debit",  format="%,.2f"),
         "credit": st.column_config.NumberColumn("credit", format="%,.2f"),
     }
-    st.dataframe(filtered, use_container_width=True, height=460, column_config=_gl_cfg)
+    st.dataframe(filtered, use_container_width=True, height=420, column_config=_gl_cfg)
+
+    # ── Dr = Cr Validation Panel ──────────────────────────────────────────
+    st.divider()
+    st.subheader("✅ Double-Entry Validation — Debit = Credit Check")
+    st.caption("Every journal entry must balance (Dr = Cr). This panel proves the subledger maintains double-entry integrity.")
+
+    _entry_check = (
+        filtered.groupby(["entry_id", "cohort_id", "period", "aoc_item"])
+        .agg(total_dr=("debit", "sum"), total_cr=("credit", "sum"))
+        .reset_index()
+    )
+    _entry_check["diff"] = (_entry_check["total_dr"] - _entry_check["total_cr"]).round(4)
+    _entry_check["balanced"] = _entry_check["diff"].abs() < 0.01
+    _entry_check["status"] = _entry_check["balanced"].map({True: "✅ OK", False: "❌ FAIL"})
+
+    _n_ok   = _entry_check["balanced"].sum()
+    _n_fail = (~_entry_check["balanced"]).sum()
+
+    _vc1, _vc2, _vc3 = st.columns(3)
+    _vc1.metric("Total Entries", len(_entry_check))
+    _vc2.metric("✅ Balanced", int(_n_ok))
+    _vc3.metric("❌ Unbalanced", int(_n_fail),
+                delta=None if _n_fail == 0 else f"{_n_fail} entries need review",
+                delta_color="off" if _n_fail == 0 else "inverse")
+
+    _val_cfg = {
+        "total_dr": st.column_config.NumberColumn("Total Dr", format="%,.2f"),
+        "total_cr": st.column_config.NumberColumn("Total Cr", format="%,.2f"),
+        "diff":     st.column_config.NumberColumn("Dr − Cr",  format="%+.4f"),
+    }
+    st.dataframe(
+        _entry_check[["entry_id", "cohort_id", "period", "aoc_item",
+                       "total_dr", "total_cr", "diff", "status"]],
+        use_container_width=True, hide_index=True,
+        height=min(35 * len(_entry_check) + 38, 320),
+        column_config=_val_cfg,
+    )
+    if _n_fail == 0:
+        st.success(f"All {_n_ok} journal entries balance perfectly (Dr = Cr ✓)")
 
     csv_buf = io.StringIO()
     gl_df.to_csv(csv_buf, index=False, encoding="utf-8")
@@ -2134,6 +2200,78 @@ All amounts in **HKD '000**. Intra-ICL transfers (CSM/PVFCF reclassifications) a
 VFA contracts generally don't use the OCI option — the underlying items mechanism already routes most IFIE through CSM.
 """)
 
+        # ── OCI Recycling Projection ──────────────────────────────────────
+        with st.expander("📈 OCI Recycling Projection — How OCI Reserve unwinds to P&L"):
+            st.markdown("""
+The accumulated OCI Reserve **recycles back to P&L** as contracts run off.
+The chart below shows how, assuming the current OCI balance releases linearly
+over the remaining contract duration, this deferred amount would emerge in future P&L.
+""")
+            # Build OCI recycling projection from ts_df (available in closure)
+            _gmm_oci = ts_df[(ts_df["model"] == "GMM") & (ts_df["ifie_oci"] != 0)].copy()
+            if not _gmm_oci.empty:
+                # Cumulative OCI reserve per cohort at end of 2024
+                _oci_reserve = (
+                    _gmm_oci.groupby("cohort_id")["ifie_oci"]
+                    .sum()
+                    .reset_index()
+                    .rename(columns={"ifie_oci": "total_oci_reserve"})
+                )
+                # Assume remaining duration: GMM ~8 years, project 12 quarters
+                _PROJ_Q = 16
+                _PROJ_LABELS = [f"Q{i+1}" for i in range(_PROJ_Q)]
+                _DURATIONS = {"TERM_GMM_2022": 12, "MED_GMM_2021": 20,
+                              "MED_GMM_ONR": 24, "MED_ONR_RECOVERY": 24}
+
+                _fig_recycle = go.Figure()
+                _recycle_rows = []
+                for _, _row in _oci_reserve.iterrows():
+                    _cid = _row["cohort_id"]
+                    _reserve = _row["total_oci_reserve"]
+                    if abs(_reserve) < 1:
+                        continue
+                    _dur = _DURATIONS.get(_cid, 20)
+                    _qtrs_left = _dur * 4
+                    _quarterly_release = -_reserve / _qtrs_left   # recycle = opposite sign
+                    _cumulative = [_reserve + _quarterly_release * (i + 1) for i in range(_PROJ_Q)]
+                    _releases   = [_quarterly_release] * _PROJ_Q
+
+                    _fig_recycle.add_scatter(
+                        x=_PROJ_LABELS, y=_cumulative,
+                        name=f"{_cid} — Residual OCI",
+                        mode="lines+markers", marker=dict(size=5),
+                    )
+                    for _qi, (_ql, _qr) in enumerate(zip(_PROJ_LABELS, _releases)):
+                        _recycle_rows.append({
+                            "Cohort": _cid,
+                            "Future Quarter": _ql,
+                            "OCI → P&L Release": round(_qr, 1),
+                            "Residual OCI Reserve": round(_cumulative[_qi], 1),
+                        })
+
+                _fig_recycle.update_layout(
+                    title="OCI Reserve Run-off — Projected Residual Balance ('000 HKD)",
+                    height=340, margin=dict(l=40, r=40, t=60, b=40),
+                    yaxis_title="Accumulated OCI Reserve",
+                    xaxis_title="Projection Quarter",
+                )
+                st.plotly_chart(_fig_recycle, use_container_width=True)
+
+                if _recycle_rows:
+                    _rec_df = pd.DataFrame(_recycle_rows)
+                    _rec_cfg = {
+                        "OCI → P&L Release":     st.column_config.NumberColumn(format="%+,.1f"),
+                        "Residual OCI Reserve":  st.column_config.NumberColumn(format="%,.1f"),
+                    }
+                    st.dataframe(_rec_df, use_container_width=True, hide_index=True,
+                                 height=260, column_config=_rec_cfg)
+
+                st.caption("""
+*Simplified linear release assumption. In practice, OCI recycles in proportion to
+coverage units (same pattern as CSM amortisation). Negative residual = expected OCI
+income to emerge in future P&L as the rate differential unwinds.*
+""")
+
     # ── Note 5: RCA Movement ──────────────────────────────────────────────
     st.markdown("---")
     st.markdown("### Note 5 — Reinsurance Contract Assets: Movement in 2024")
@@ -2218,13 +2356,27 @@ The movement mirrors the gross ICL at the effective cession rate per cohort.*
     if not nd.empty:  _disc_sheets["Cohort Detail"]              = nd.reset_index()
     write_formatted_excel(_disc_sheets, buf=buf_disc, period="FY 2024")
     buf_disc.seek(0)
-    st.download_button(
-        "📥  Download Disclosure Notes (.xlsx)",
-        data=buf_disc,
-        file_name="IFRS17_Disclosures_2024.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-    )
+
+    _dl_col1, _dl_col2 = st.columns(2)
+    with _dl_col1:
+        st.download_button(
+            "📥  Download Disclosure Notes (.xlsx)",
+            data=buf_disc,
+            file_name="IFRS17_Disclosures_2024.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+    with _dl_col2:
+        buf_pdf = io.BytesIO()
+        write_pdf_report(_disc_sheets, buf=buf_pdf, period="FY 2024", max_rows=40)
+        buf_pdf.seek(0)
+        st.download_button(
+            "🖨️  Download Disclosure Notes (.pdf)",
+            data=buf_pdf,
+            file_name="IFRS17_Disclosures_2024.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2239,6 +2391,61 @@ that replaces IFRS 4. It requires insurers to measure insurance liabilities usin
 current, explicit, and unbiased estimates — and to recognise profit only as insurance 
 service is delivered.
 """)
+
+    # ── Architecture Flow Diagram ─────────────────────────────────────────
+    st.markdown("### 🗺️ System Architecture — From Actuarial Output to Disclosures")
+
+    _nodes_x = [0.05, 0.25, 0.50, 0.75, 0.95]
+    _nodes_y = [0.5,  0.5,  0.5,  0.5,  0.5 ]
+    _node_labels = [
+        "📄 Actuarial\nOutput CSV\n(Prophet/MoSes)",
+        "⚙️ AOC Engine\nGMM · PAA · VFA\n9-item decomposition",
+        "📒 GL Journal\nGenerator\n(Dr = Cr)",
+        "📊 Reports\nP&L · BS · Trial\nBalance",
+        "📋 Disclosures\nNote 1–6\nExcel / PDF",
+    ]
+    _node_colors = ["#dbeafe", "#ede9fe", "#fef3c7", "#dcfce7", "#fee2e2"]
+    _edge_pairs = [(0,1),(1,2),(2,3),(3,4)]
+
+    _fig_arch = go.Figure()
+
+    # Edges
+    for _i, _j in _edge_pairs:
+        _fig_arch.add_annotation(
+            x=_nodes_x[_j] - 0.03, y=_nodes_y[_j],
+            ax=_nodes_x[_i] + 0.03, ay=_nodes_y[_i],
+            xref="paper", yref="paper", axref="paper", ayref="paper",
+            showarrow=True, arrowhead=3, arrowsize=1.5,
+            arrowwidth=2, arrowcolor="#94a3b8",
+        )
+
+    # Nodes
+    for _k, (_lx, _ly, _lbl, _col) in enumerate(
+            zip(_nodes_x, _nodes_y, _node_labels, _node_colors)):
+        _fig_arch.add_shape(
+            type="rect",
+            x0=_lx - 0.085, y0=_ly - 0.28, x1=_lx + 0.085, y1=_ly + 0.28,
+            xref="paper", yref="paper",
+            fillcolor=_col, line=dict(color="#94a3b8", width=1.5),
+        )
+        _fig_arch.add_annotation(
+            x=_lx, y=_ly, xref="paper", yref="paper",
+            text=_lbl.replace("\n", "<br>"),
+            showarrow=False,
+            font=dict(size=11, color="#1e293b"),
+            align="center",
+        )
+
+    _fig_arch.update_layout(
+        height=220, margin=dict(l=10, r=10, t=10, b=10),
+        xaxis=dict(visible=False, range=[0, 1]),
+        yaxis=dict(visible=False, range=[0, 1]),
+        plot_bgcolor="white", paper_bgcolor="white",
+    )
+    st.plotly_chart(_fig_arch, use_container_width=True)
+    st.caption("Each arrow represents a data handoff. The subledger is the middle layer — it reads AOC results and writes balanced GL entries.")
+
+    st.divider()
 
     # ── Section 1: Three measurement models ──────────────────────────────
     st.markdown("### 1. Three Measurement Models")
@@ -2657,13 +2864,33 @@ with col_dl:
         }
         write_formatted_excel(_sheets, buf=buf, period=sel_period)
         buf.seek(0)
-        st.download_button(
-            "⬇ Download Formatted Excel (.xlsx)",
-            data=buf.getvalue(),
-            file_name=f"IFRS17_Subledger_{sel_period}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
-        )
+
+        _sub_c1, _sub_c2 = st.columns(2)
+        with _sub_c1:
+            st.download_button(
+                "⬇ Download Formatted Excel (.xlsx)",
+                data=buf.getvalue(),
+                file_name=f"IFRS17_Subledger_{sel_period}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+        with _sub_c2:
+            _summary_sheets = {
+                "P&L Summary":   pl_summary(aoc_list, rca_list),
+                "Balance Sheet": bs_summary(aoc_list, rca_list),
+                "AOC Detail":    aoc_detail(aoc_list),
+                "Trial Balance": trial_balance(batches),
+            }
+            _buf_pdf2 = io.BytesIO()
+            write_pdf_report(_summary_sheets, buf=_buf_pdf2, period=sel_period, max_rows=40)
+            _buf_pdf2.seek(0)
+            st.download_button(
+                "🖨️ Download Summary Report (.pdf)",
+                data=_buf_pdf2,
+                file_name=f"IFRS17_Summary_{sel_period}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
 
 with col_info:
     st.caption("""

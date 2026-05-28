@@ -8,6 +8,18 @@
 [![IFRS 17](https://img.shields.io/badge/Standard-IFRS%2017-004B87?style=flat)](https://www.ifrs.org/issued-standards/list-of-standards/ifrs-17-insurance-contracts/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat)](LICENSE)
 
+<!-- Demo GIF: record with any screen-capture tool (e.g. LICEcap, Kap, or ShareX)
+     and save as docs/demo.gif. Then replace this comment block with:
+     ![App Demo](docs/demo.gif)
+     Recommended flow to record:
+       1. Dashboard tab — KPI cards
+       2. AOC Waterfall chart
+       3. GL Entries + Dr=Cr validation panel
+       4. Disclosures Note 1 movement table
+       5. Time Series — CSM run-off projection
+       6. How It Works — architecture diagram
+-->
+
 ---
 
 ## What Is This?
@@ -97,10 +109,10 @@ Demo cohort `MED_ONR_RECOVERY` walks through every IFRS 17 onerous contract even
 | 📒 **GL Entries** | Full double-entry journal, searchable by account |
 | ⚖️ **Trial Balance** | Aggregated debit / credit totals |
 | ✅ **Reconciliation** | BOM + Movements = EOM check per cohort |
-| 📉 **Time Series** | Multi-quarter trends · CSM Glide Path · OCI Reserve accumulation |
+| 📉 **Time Series** | Multi-quarter trends · CSM Glide Path · OCI Reserve accumulation · OCI Recycling projection |
 | 🎯 **Sensitivity** | Tornado chart · Rate / mortality / expense shocks · Per-cohort breakdown |
-| 📋 **Disclosures** | 6 IFRS 17 Notes (ICL rollforward · Revenue · IFIE · RCA · Maturity) + Excel download |
-| 📖 **How It Works** | Plain-English explainer: GMM/PAA/VFA · AOC · OCI option · Reinsurance · Onerous lifecycle · Transition methods |
+| 📋 **Disclosures** | 6 IFRS 17 Notes (ICL rollforward · Revenue · IFIE · RCA · Maturity) + **Excel & PDF** download |
+| 📖 **How It Works** | Architecture flow diagram · Plain-English explainer: GMM/PAA/VFA · AOC · OCI option · Reinsurance · Onerous lifecycle |
 
 ---
 
@@ -256,7 +268,8 @@ Generates all 6 standard disclosure tables required by IFRS 17.97–132:
 | Web UI | `Streamlit` |
 | Interactive charts | `Plotly` |
 | Config | `PyYAML` |
-| Excel export | `openpyxl` (formatted: colour headers, bold totals, number format) |
+| Excel export | `openpyxl` (formatted: colour headers, bold totals, number format, red negatives, frozen panes) |
+| PDF export   | `fpdf2` (management report layout: A4 landscape, header/footer, colour tables) |
 | Deployment | Streamlit Community Cloud |
 
 ---

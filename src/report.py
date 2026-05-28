@@ -349,7 +349,7 @@ def write_formatted_excel(
                 continue
             df.to_excel(writer, sheet_name=sheet_name[:31], index=False)
             ws = writer.sheets[sheet_name[:31]]
-            full_title = f"IFRS 17 Subledger  —  {sheet_name}"
+            full_title = f"IFRS 17 Subledger - {sheet_name}"
             if period:
                 full_title += f"  |  Period: {period}"
             _style_sheet(ws, df, title=full_title)
@@ -377,3 +377,127 @@ def export_to_excel(
     }
     write_formatted_excel(sheets, output_path=output_path)
     print(f"[report] Written: {output_path}")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PDF 报告（fpdf2）
+# ──────────────────────────────────────────────────────────────────────────────
+
+def write_pdf_report(
+    sheets: Dict[str, pd.DataFrame],
+    buf,
+    period: str = "",
+    max_rows: int = 50,
+) -> None:
+    """
+    将关键汇总表写入 PDF（使用 fpdf2）。
+
+    Parameters
+    ----------
+    sheets   : {"Sheet Title": DataFrame, ...}
+    buf      : io.BytesIO — 输出 PDF 字节
+    period   : 期间标签
+    max_rows : 每张表最多显示行数（防止 PDF 过长）
+    """
+    try:
+        from fpdf import FPDF
+    except ImportError:
+        buf.write(b"fpdf2 not installed. Please add fpdf2 to requirements.txt.")
+        return
+
+    class _PDF(FPDF):
+        """带 IFRS 17 样式的 PDF 模板。"""
+        def header(self):
+            self.set_font("Helvetica", "B", 14)
+            self.set_fill_color(30, 58, 95)       # deep navy
+            self.set_text_color(255, 255, 255)
+            self.cell(0, 10, "IFRS 17 Subledger - Management Report", ln=True,
+                      align="C", fill=True)
+            self.set_font("Helvetica", "", 8)
+            self.set_text_color(100, 100, 100)
+            _ts = datetime.now().strftime("%d %b %Y  %H:%M")
+            self.cell(0, 6,
+                      f"Period: {period}   |   Generated: {_ts}   |   Amounts in '000 HKD",
+                      ln=True, align="C")
+            self.ln(3)
+
+        def footer(self):
+            self.set_y(-12)
+            self.set_font("Helvetica", "I", 8)
+            self.set_text_color(150, 150, 150)
+            self.cell(0, 8, f"Page {self.page_no()} - Demo data only. Not for regulatory use.",
+                      align="C")
+
+    pdf = _PDF(orientation="L", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_margins(10, 15, 10)
+
+    for sheet_name, df in sheets.items():
+        if df is None or df.empty:
+            continue
+        pdf.add_page()
+
+        # Section title (strip em-dash for latin-1 font compatibility)
+        _safe_name = sheet_name.replace("\u2014", " - ").replace("\u2013", " - ")
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_text_color(30, 58, 95)
+        pdf.cell(0, 8, _safe_name, ln=True)
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(1)
+
+        _df = df.head(max_rows).copy()
+        _cols = list(_df.columns)
+        _n = len(_cols)
+
+        # 计算列宽：纯数字列窄一些，文字列宽一些
+        usable_w = pdf.w - pdf.l_margin - pdf.r_margin
+        _num_set = set(_df.select_dtypes(include="number").columns)
+        _txt_w  = usable_w * 0.55 / max(sum(1 for c in _cols if c not in _num_set), 1)
+        _num_w  = usable_w * 0.45 / max(sum(1 for c in _cols if c in _num_set), 1)
+        col_widths = [_num_w if c in _num_set else _txt_w for c in _cols]
+
+        # 表头
+        pdf.set_font("Helvetica", "B", 7.5)
+        pdf.set_fill_color(189, 215, 238)     # light blue
+        pdf.set_text_color(30, 58, 95)
+        for w, col in zip(col_widths, _cols):
+            pdf.cell(w, 7, str(col)[:18], border=1, align="C", fill=True)
+        pdf.ln()
+
+        # 数据行
+        pdf.set_font("Helvetica", "", 7)
+        pdf.set_text_color(0, 0, 0)
+        for _, row in _df.iterrows():
+            is_total = str(row.iloc[0]).startswith("__TOTAL__")
+            if is_total:
+                pdf.set_font("Helvetica", "B", 7)
+                pdf.set_fill_color(242, 242, 242)
+            else:
+                pdf.set_font("Helvetica", "", 7)
+                pdf.set_fill_color(255, 255, 255)
+            for w, col in zip(col_widths, _cols):
+                val = row[col]
+                if col in _num_set and isinstance(val, (int, float)) and not pd.isna(val):
+                    if val < 0:
+                        pdf.set_text_color(192, 0, 0)
+                    else:
+                        pdf.set_text_color(0, 0, 0)
+                    txt = f"{val:,.1f}"
+                    pdf.cell(w, 6, txt, border=1, align="R", fill=is_total)
+                else:
+                    pdf.set_text_color(0, 0, 0)
+                    txt = str(val) if not pd.isna(val) else ""
+                    txt = txt.replace("__TOTAL__", "TOTAL")
+                    pdf.cell(w, 6, txt[:22], border=1, align="L", fill=is_total)
+            pdf.ln()
+
+        if len(df) > max_rows:
+            pdf.set_font("Helvetica", "I", 7)
+            pdf.set_text_color(120, 120, 120)
+            pdf.cell(0, 5, f"  … {len(df) - max_rows} more rows truncated in PDF. See Excel export for full data.", ln=True)
+
+    raw = pdf.output()
+    if isinstance(raw, (bytes, bytearray)):
+        buf.write(bytes(raw))
+    else:
+        buf.write(raw.encode("latin-1"))
