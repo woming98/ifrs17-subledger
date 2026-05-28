@@ -2361,13 +2361,14 @@ When interest rates rise, **two things happen simultaneously**:
     with _col_oci_a:
         st.markdown("""
 <div class="concept-card">
-  <div class="concept-title">📉 Liability side — ICL falls</div>
+  <div class="concept-title">📉 Liability side — ICL falls → OCI gain</div>
   <div class="concept-body">
-  Higher discount rate → lower PVFCF<br><br>
+  Higher discount rate → lower PVFCF → liability decreases<br>
+  This is a <b>benefit</b>, routed to OCI (not P&L)<br><br>
   <b>Journal entry (⑦ IFIE OCI):</b><br>
-  Dr &nbsp;ICL-LRC PVFCF &nbsp;&nbsp;&nbsp;&nbsp;45 &nbsp;← liability ↓<br>
-  &nbsp;&nbsp;Cr &nbsp;OCI — IFIE &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;45 &nbsp;← equity ↓<br><br>
-  Liabilities <b>decrease 45</b>, Equity <b>decreases 45</b>
+  Dr &nbsp;ICL-LRC PVFCF &nbsp;45 &nbsp;← liability ↓<br>
+  &nbsp;&nbsp;Cr &nbsp;OCI — IFIE &nbsp;&nbsp;&nbsp;&nbsp;45 &nbsp;← equity <b>↑</b> (OCI gain)<br><br>
+  Liabilities <b>−45</b> &nbsp;|&nbsp; Equity <b>+45</b>
   </div>
 </div>
 """, unsafe_allow_html=True)
@@ -2375,55 +2376,63 @@ When interest rates rise, **two things happen simultaneously**:
     with _col_oci_b:
         st.markdown("""
 <div class="concept-card">
-  <div class="concept-title">📉 Asset side — Bond value falls</div>
+  <div class="concept-title">📉 Asset side — Bond falls → OCI loss</div>
   <div class="concept-body">
-  Higher rates → bond prices fall (IFRS 9 fair value)<br><br>
+  Higher rates → bond prices fall → asset decreases<br>
+  This is a <b>loss</b>, also routed to OCI (IFRS 9)<br><br>
   <b>Journal entry (IFRS 9 bond revaluation):</b><br>
-  Dr &nbsp;OCI — Bond FV &nbsp;&nbsp;&nbsp;&nbsp;45 &nbsp;← equity ↓<br>
-  &nbsp;&nbsp;Cr &nbsp;Investment Assets &nbsp;&nbsp;45 &nbsp;← asset ↓<br><br>
-  Assets <b>decrease 45</b>, Equity <b>decreases 45</b>
+  Dr &nbsp;OCI — Bond &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;45 &nbsp;← equity <b>↓</b> (OCI loss)<br>
+  &nbsp;&nbsp;Cr &nbsp;Investment Assets &nbsp;45 &nbsp;← asset ↓<br><br>
+  Assets <b>−45</b> &nbsp;|&nbsp; Equity <b>−45</b>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
     st.markdown("""
-**Combined balance sheet effect (rate rise of +Δr):**
+**Combined balance sheet (rate rise, perfect ALM match — asset duration = liability duration):**
 
 ```
-                    Before          After           Change
+                    Before        After       Change    Driver
 ── Assets ──
-  Bond (fair value)   50,000         49,955            −45   ← IFRS 9 OCI
-  Other assets        10,000         10,000              0
-  Total Assets        60,000         59,955            −45
+  Bond (fair value)  50,000       49,955         −45    IFRS 9 OCI loss
+  Other assets       10,000       10,000           0
+  Total Assets       60,000       59,955         −45
 
 ── Liabilities ──
-  ICL-LRC PVFCF      (15,000)       (14,955)           +45   ← IFRS 17 OCI (liability falls)
+  ICL-LRC PVFCF     (15,000)     (14,955)        +45    IFRS 17 OCI gain (liability falls)
 
 ── Equity ──
-  Retained Earnings   44,500         44,500              0   ← P&L untouched
-  Accumulated OCI        500            410            −90   ← bond OCI (−45) + ICL OCI (−45)
-  Total Equity        45,000         44,910            −90
+  Retained Earnings  44,500       44,500           0    P&L untouched
+  Accumulated OCI       500          500           0    +45 (ICL gain) − 45 (bond loss) = 0
+  Total Equity       45,000       45,000           0    Net OCI cancels
 
-  Total L + E         60,000         59,955   ✓  (−45 = −45)
+  Total L + E        59,955       59,955   ✓
 ```
 
-Both sides fall by **45** — the equation balances perfectly.
+Two OCI entries with **opposite signs inside equity**:
+- Liability OCI: `Dr ICL / Cr OCI` → equity **+45** (gain)
+- Bond OCI:      `Dr OCI / Cr Bond` → equity **−45** (loss)
+- Net equity change = **zero** — this is ALM symmetry
 """)
 
     st.info("""
-**Why does equity fall on both sides?**
+**Why does equity stay flat when rates rise?**
 
-- The **bond you hold** becomes worth less (asset ↓) → OCI loss
-- The **liability you owe** also becomes worth less (liability ↓) → OCI gain
+The rate rise causes two effects that cancel inside equity:
+- ICL liability falls → OCI **gain** → equity up 45
+- Bond value falls → OCI **loss** → equity down 45
+- Net = 0 (when asset and liability duration match perfectly)
 
-These two OCI effects largely **cancel each other out** at the equity level — this is 
-called **ALM symmetry** (Asset-Liability Management matching).  
-The entire point of routing both through OCI (instead of P&L) is to keep the income 
-statement stable while the balance sheet reflects current market values.
+Both sides of the balance sheet shrink by 45 (assets −45, liabilities −45), keeping the
+equation balanced with equity unchanged.  P&L is never touched.
 
-When contracts eventually **run off**, the accumulated OCI is recycled back to P&L,  
-releasing the deferred gain/loss over the remaining contract lifetime.
+This is called **ALM symmetry** — by routing both the liability gain and the asset loss
+through OCI, the income statement stays stable regardless of rate moves.
+
+When contracts eventually **run off**, accumulated OCI recycles to P&L over the remaining
+contract lifetime.
 """)
+
 
     # ── Section 5: Reinsurance RCA ────────────────────────────────────────
     st.markdown("### 5. Quota Share Reinsurance — RCA")
