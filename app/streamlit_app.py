@@ -30,7 +30,7 @@ if _ROOT not in sys.path:
 from src.models.gmm import GMMModel
 from src.models.paa import PAAModel
 from src.models.vfa import VFAModel
-from src.reinsurance import compute_rca
+from src.reinsurance import compute_rca, compute_rca_treaties, load_treaties
 from src.subledger import ChartOfAccounts, generate_journal
 from src.reconciliation import reconcile_portfolio, check_journal_balance, aoc_waterfall
 from src.analytics import build_timeseries, portfolio_timeseries
@@ -67,8 +67,9 @@ st.markdown("""
 
 MODEL_DISPATCH = {"GMM": GMMModel(), "PAA": PAAModel(), "VFA": VFAModel()}
 QUARTERS = ["2024Q1", "2024Q2", "2024Q3", "2024Q4"]
-_DATA_DIR = os.path.join(_ROOT, "data")
-_COA_PATH = os.path.join(_ROOT, "config", "chart_of_accounts.yaml")
+_DATA_DIR    = os.path.join(_ROOT, "data")
+_COA_PATH    = os.path.join(_ROOT, "config", "chart_of_accounts.yaml")
+_TREATY_PATH = os.path.join(_ROOT, "config", "reinsurance_treaties.yaml")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -97,13 +98,14 @@ with st.sidebar:
     st.divider()
     st.caption("**Cohorts in demo**")
     st.markdown("""
-- <span class="badge-gmm">GMM</span> TERM_GMM_2022 (Term 5Y, QS 30%)
-- <span class="badge-gmm">GMM</span> MED_GMM_2021 (Medical LT, QS 20%)
-- <span class="badge-gmm">GMM</span> MED_GMM_ONR (Onerous)
-- <span class="badge-paa">PAA</span> MED_PAA (Medical ST, QS 25%)
-- <span class="badge-paa">PAA</span> RIDER_PAA (Rider ST)
-- <span class="badge-vfa">VFA</span> WL_VFA_2019 (Whole Life Par, QS 20%)
-- <span class="badge-vfa">VFA</span> ENDO_VFA_2022 (Endowment Par)
+- <span class="badge-gmm">GMM</span> TERM_GMM_2022 — Term 5Y<br>
+  &nbsp;&nbsp;🔀 **Layered XL**: L1(0–300k) Hanover 20% · L2(300k–600k) MR 20% + BOC 80%
+- <span class="badge-gmm">GMM</span> MED_GMM_2021 — Medical LT · QS 20% Munich Re
+- <span class="badge-gmm">GMM</span> MED_GMM_ONR — Onerous · QS 15% Munich Re
+- <span class="badge-paa">PAA</span> MED_PAA — Medical ST · QS 25% Hannover Life Re
+- <span class="badge-paa">PAA</span> RIDER_PAA — Rider ST · No RI
+- <span class="badge-vfa">VFA</span> WL_VFA_2019 — Whole Life Par · QS 20% Swiss Re
+- <span class="badge-vfa">VFA</span> ENDO_VFA_2022 — Endowment Par · No RI
 """, unsafe_allow_html=True)
 
 
@@ -113,8 +115,9 @@ with st.sidebar:
 
 st.title("📊 IFRS 17 Subledger — Full Process Demo")
 st.markdown("""
-> **Coverage**: GMM · PAA · **VFA** (new) · Quota Share RCA · AOC 9-step decomposition  
-> **Multi-period**: 7 cohorts × 4 quarters (2024Q1–Q4) · Time series analytics
+> **Coverage**: GMM · PAA · **VFA** · Quota Share + **Layered XL** RCA · AOC 9-step decomposition  
+> **Multi-period**: 7 cohorts × 4 quarters (2024Q1–Q4) · Time series analytics  
+> **Reinsurance**: 3-treaty layered XL (Hanover Re / Munich Re / BOC Re) for TERM cohort
 """)
 
 if not run_btn:
@@ -138,18 +141,23 @@ Switch to the **📖 How It Works** tab to understand IFRS 17 concepts.
 # ──────────────────────────────────────────────────────────────────────────────
 
 @st.cache_data(show_spinner="Running IFRS 17 subledger across all periods…")
-def run_all_periods(data_path: str, coa_path: str, tol: float):
+def run_all_periods(data_path: str, coa_path: str, treaty_path: str, tol: float):
     """
     Process all 4 quarters from actuarial_output.csv.
+    Uses reinsurance_treaties.yaml for layered XL + multi-reinsurer support.
+
     Returns:
         all_results : {period: [AOCResult, ...]}
-        all_rca     : {period: [RCASummary, ...]}
+        all_rca     : {period: [RCASummary, ...]}   # one entry per treaty
         all_batches : {period: [JournalBatch, ...]}
         ts_df       : long-form time series DataFrame
         warnings    : list of warning strings
     """
     df  = pd.read_csv(data_path)
     coa = ChartOfAccounts(coa_path)
+
+    # 加载再保合同配置（分层 XL + QS）
+    treaties_by_cohort, claim_dist = load_treaties(treaty_path)
 
     all_results: dict = {}
     all_rca:     dict = {}
@@ -186,15 +194,26 @@ def run_all_periods(data_path: str, coa_path: str, tol: float):
             result = engine.compute_aoc(bom_row, eom_row)
             aoc_list.append(result)
 
-        rca_by_id = {}
+        # 生成每个 cohort 的 RCA（优先用 treaty YAML，无则退回 CSV cession_rate）
+        rcas_by_id: dict = {}  # cohort_id → List[RCASummary]
         for a in aoc_list:
-            if a.cession_rate > 0:
-                rca = compute_rca(a)
-                rca_list.append(rca)
-                rca_by_id[a.cohort_id] = rca
+            if a.cohort_id in treaties_by_cohort:
+                treaties = treaties_by_cohort[a.cohort_id]
+                rcas = compute_rca_treaties(a, treaties, claim_dist)
+            elif a.cession_rate > 0:
+                rcas = [compute_rca(a)]
+            else:
+                rcas = []
+
+            if rcas:
+                rca_list.extend(rcas)
+                rcas_by_id[a.cohort_id] = rcas
 
         for a in aoc_list:
-            batch = generate_journal(a, coa, rca_by_id.get(a.cohort_id))
+            batch = generate_journal(
+                a, coa,
+                rcas=rcas_by_id.get(a.cohort_id),
+            )
             batches.append(batch)
 
         all_results[period] = aoc_list
@@ -205,7 +224,7 @@ def run_all_periods(data_path: str, coa_path: str, tol: float):
     return all_results, all_rca, all_batches, ts_df, warnings
 
 
-all_results, all_rca, all_batches, ts_df, warnings = run_all_periods(data_file, _COA_PATH, tol)
+all_results, all_rca, all_batches, ts_df, warnings = run_all_periods(data_file, _COA_PATH, _TREATY_PATH, tol)
 
 for w in warnings:
     st.warning(w)
@@ -365,6 +384,50 @@ with tab_bs:
         height=440, xaxis_tickangle=-20, margin=dict(l=40, r=40, t=60, b=60),
     )
     st.plotly_chart(fig_bs, use_container_width=True)
+
+    # ── RCA 再保人 / 分层明细 ─────────────────────────────────────────────
+    if rca_list:
+        with st.expander("📋 RCA Detail — by Reinsurer & Layer", expanded=False):
+            rca_rows = []
+            for r in rca_list:
+                rca_rows.append({
+                    "cohort_id":   r.cohort_id,
+                    "period":      r.period,
+                    "treaty_id":   r.treaty_id,
+                    "reinsurer":   r.reinsurer,
+                    "layer":       r.layer_label,
+                    "eff_rate_%":  round(r.cession_rate * 100, 2),
+                    "rca_bom":     round(r.rca_bom_icl, 2),
+                    "rca_eom":     round(r.rca_eom_icl, 2),
+                    "rca_isr":     round(r.rca_insurance_revenue, 2),
+                    "recon_ok":    r.reconciliation_ok,
+                })
+            rca_detail_df = pd.DataFrame(rca_rows)
+
+            def _color_recon(val):
+                return "color:#16a34a;font-weight:700" if val else "color:#dc2626;font-weight:700"
+
+            num_cols = ["eff_rate_%", "rca_bom", "rca_eom", "rca_isr"]
+            st.dataframe(
+                rca_detail_df.style
+                    .format({c: "{:,.2f}" for c in num_cols})
+                    .map(_color_recon, subset=["recon_ok"]),
+                use_container_width=True,
+                height=min(80 + len(rca_detail_df) * 35, 400),
+            )
+
+            # 分再保人柱图
+            if len(rca_detail_df) > 1:
+                fig_ri = px.bar(
+                    rca_detail_df,
+                    x="cohort_id", y="rca_eom",
+                    color="reinsurer", text="layer",
+                    barmode="stack",
+                    title=f"RCA EOM by Reinsurer — {sel_period}",
+                    color_discrete_sequence=px.colors.qualitative.Pastel,
+                )
+                fig_ri.update_layout(height=360, margin=dict(l=40, r=40, t=60, b=60))
+                st.plotly_chart(fig_ri, use_container_width=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

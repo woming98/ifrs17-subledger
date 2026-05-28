@@ -36,6 +36,7 @@ import yaml
 
 from .models.base import AOCResult
 from .reinsurance import RCASummary
+from typing import List
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -151,13 +152,18 @@ def generate_journal(
     aoc: AOCResult,
     coa: ChartOfAccounts,
     rca: "RCASummary | None" = None,
+    rcas: "List[RCASummary] | None" = None,
 ) -> JournalBatch:
     """
-    根据 AOCResult（直接业务 + 可选 RCA）生成 GL 分录批。
+    根据 AOCResult（直接业务 + 可选 RCA 列表）生成 GL 分录批。
+
+    参数
+    ----
+    rca  : 单个 RCASummary（向后兼容旧接口）
+    rcas : 多个 RCASummary 列表（新接口，支持分层 XL 多家再保人）
+    若两者均提供，rcas 优先。
 
     会计逻辑：
-      所有分录以 ICL 变动为核心，对侧科目为 P&L / OCI / Cash。
-
       ICL 负债增加（正数 movement）→ Dr 对侧 / Cr ICL
       ICL 负债减少（负数 movement）→ Dr ICL / Cr 对侧
     """
@@ -330,10 +336,17 @@ def generate_journal(
                       abs(_und_chg), ccy, "Underlying items loss charged to CSM")
 
     # ====================================================================
-    # 再保险 RCA 分录（若有分出）
+    # 再保险 RCA 分录（支持多合同：分层 XL 每家再保人一笔）
     # ====================================================================
-    if rca is not None and rca.cession_rate > 0:
-        _add_rca_entries(batch, rca, coa, ccy)
+    # rcas 优先（新接口），否则退回旧接口 rca
+    rca_list_to_process: list = []
+    if rcas:
+        rca_list_to_process = [r for r in rcas if r.cession_rate > 0]
+    elif rca is not None and rca.cession_rate > 0:
+        rca_list_to_process = [rca]
+
+    for _rca in rca_list_to_process:
+        _add_rca_entries(batch, _rca, coa, ccy)
 
     return batch
 
@@ -358,9 +371,11 @@ def _add_rca_entries(
     OCI       = "5100"
     RETAINED  = "3100"
 
+    ri_tag = f"{rca.reinsurer} / {rca.layer_label}"
+
     def rca_add(label, dr_code, dr_name, cr_code, cr_name, amount):
         if abs(amount) > 1e-6:
-            batch.add(f"[RCA] {label}", dr_code, dr_name, cr_code, cr_name, abs(amount), ccy)
+            batch.add(f"[RCA {ri_tag}] {label}", dr_code, dr_name, cr_code, cr_name, abs(amount), ccy)
 
     # ① 新业务
     nb = rca.rca_new_business

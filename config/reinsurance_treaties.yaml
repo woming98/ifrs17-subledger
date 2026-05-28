@@ -1,0 +1,85 @@
+# IFRS 17 Reinsurance Treaty Programme
+#
+# 定义每个 cohort 的再保合同结构：
+#   - QS (Quota Share): 比例再保，layer_upper 留空
+#   - XL (Excess of Loss): 超额赔付，按层次分，每层可有多家再保人
+#
+# effective_cession_rate（用于计算 RCA 时的有效分保比例）：
+#   - 纯 QS：effective_rate = cession_rate
+#   - XL 分层：使用 LEV 从赔付分布中切出各层期望赔付，
+#              effective_rate = cession_rate × E[Layer] / E[Total up to max_claim]
+#   在实际生产中，Prophet/MoSes 直接输出每层的 PVFCF，无需此处计算。
+#   本 demo 用 LEV 演示分层逻辑。
+
+treaties:
+
+  # ── TERM_GMM_2022: 两层分层 XL 再保 ─────────────────────────────────────────
+  # 第1层（0–300k）: 公司自留80%，Hanover Re 承保20%
+  # 第2层（300k–600k）: Munich Re 20%，BOC Re 80%
+  - treaty_id:    TERM_HAN_L1
+    cohort_id:    TERM_GMM_2022
+    reinsurer:    "Hanover Re"
+    layer_lower:  0
+    layer_upper:  300000
+    cession_rate: 0.20
+
+  - treaty_id:    TERM_MR_L2
+    cohort_id:    TERM_GMM_2022
+    reinsurer:    "Munich Re"
+    layer_lower:  300000
+    layer_upper:  600000
+    cession_rate: 0.20
+
+  - treaty_id:    TERM_BOC_L2
+    cohort_id:    TERM_GMM_2022
+    reinsurer:    "BOC Re"
+    layer_lower:  300000
+    layer_upper:  600000
+    cession_rate: 0.80
+
+  # ── MED_GMM_2021: 简单 Quota Share ──────────────────────────────────────────
+  - treaty_id:    MED_GMM_QS
+    cohort_id:    MED_GMM_2021
+    reinsurer:    "Munich Re"
+    layer_lower:  0
+    layer_upper:  null
+    cession_rate: 0.20
+
+  # ── MED_GMM_ONR: 简单 Quota Share（亏损合同）────────────────────────────────
+  - treaty_id:    MED_ONR_QS
+    cohort_id:    MED_GMM_ONR
+    reinsurer:    "Munich Re"
+    layer_lower:  0
+    layer_upper:  null
+    cession_rate: 0.15
+
+  # ── MED_PAA: 简单 Quota Share ────────────────────────────────────────────────
+  - treaty_id:    MED_PAA_QS
+    cohort_id:    MED_PAA
+    reinsurer:    "Hannover Life Re"
+    layer_lower:  0
+    layer_upper:  null
+    cession_rate: 0.25
+
+  # ── WL_VFA_2019: 简单 Quota Share ───────────────────────────────────────────
+  - treaty_id:    WL_VFA_QS
+    cohort_id:    WL_VFA_2019
+    reinsurer:    "Swiss Re"
+    layer_lower:  0
+    layer_upper:  null
+    cession_rate: 0.20
+
+  # RIDER_PAA, ENDO_VFA_2022: 无再保安排（cession_rate=0，不列出）
+
+# ── 赔付分布参数（用于 LEV 分层计算，仅 demo 用）───────────────────────────────
+# 对数正态分布 LogNormal(mu, sigma) 的参数，代表单笔赔付金额（HKD）
+# 生产环境中 Prophet 直接输出各层 PVFCF，不需要此节
+claim_distribution:
+  TERM_GMM_2022:
+    mu:        12.2      # ln(mean)；e^12.2 ≈ HKD 200,000
+    sigma:     0.85
+    max_claim: 600000    # 与第2层上限一致
+  default:
+    mu:        11.5
+    sigma:     0.96
+    max_claim: 600000
