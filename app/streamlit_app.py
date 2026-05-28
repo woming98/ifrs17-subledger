@@ -701,8 +701,53 @@ routes most IFIE through CSM.
 </div>
 """, unsafe_allow_html=True)
 
-    # ── Section 6: This subledger's flow ──────────────────────────────────
-    st.markdown("### 6. This Subledger's Data Flow")
+    # ── Section 6: Layered XL Reinsurance & LEV ──────────────────────────
+    st.markdown("### 6. Layered Excess-of-Loss Reinsurance & LEV")
+    st.markdown("""
+Real-world reinsurance programmes are rarely a single Quota Share.  
+A typical arrangement stacks **multiple layers**, each potentially split across several reinsurers:
+""")
+
+    st.code("""
+Example: Medical / Term product reinsurance programme
+─────────────────────────────────────────────────────
+  Layer 1  (claim  0 – 300k)   80% retained,  20% → Hanover
+  Layer 2  (claim 300k – 600k) 20% → MR,      80% → BOC Re
+  Above 600k                   retained (or separate Cat XL)
+""", language="")
+
+    st.markdown("""
+**Key concept — Limited Expected Value (LEV)**
+
+To price each layer, actuaries use the *layer function* derived from LEV:
+
+$$E[\\text{Layer}_{[a,b]}] = E[X \\wedge b] - E[X \\wedge a]$$
+
+where the LEV at limit $d$ is:
+
+$$E[X \\wedge d] = \\int_0^d S(x)\\, dx, \\quad S(x) = P(X > x)$$
+
+For a **log-normal** claim distribution $X \\sim \\text{LogNormal}(\\mu, \\sigma)$:
+
+$$E[X \\wedge d] = e^{\\mu + \\sigma^2/2}\\, \\Phi\\!\\left(\\frac{\\ln d - \\mu - \\sigma^2}{\\sigma}\\right) + d\\left[1 - \\Phi\\!\\left(\\frac{\\ln d - \\mu}{\\sigma}\\right)\\right]$$
+
+This gives the **expected claim recovery per layer**, which feeds into each RCA's PVFCF.
+
+**Why does each layer need a separate RCA?**  
+Layer 2 (300k–600k) has *lower frequency* but *higher severity* than Layer 1.  
+Their RA (risk adjustment) profiles differ, and each reinsurance contract is a distinct 
+legal entity under IFRS 17 — they cannot be merged.
+""")
+
+    st.info("""
+**In practice (and in this demo):** The actuarial system (Prophet / MoSes) outputs  
+**pre-calculated PVFCF per cohort** — the LEV layer-splitting is done *inside* Prophet,  
+not in the subledger. The subledger simply reads the numbers from `actuarial_output.csv`  
+and processes each RCA independently. This is the standard architecture in production.
+""")
+
+    # ── Section 7: This subledger's flow ──────────────────────────────────
+    st.markdown("### 7. This Subledger's Data Flow")
     st.code("""
 Actuarial System (Prophet / MoSes)
     actuarial_output.csv
