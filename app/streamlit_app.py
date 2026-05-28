@@ -34,7 +34,7 @@ from src.reinsurance import compute_rca
 from src.reinsurance_xl import compute_rca_treaties, load_treaties
 from src.subledger import ChartOfAccounts, generate_journal
 from src.reconciliation import reconcile_portfolio, check_journal_balance, aoc_waterfall
-from src.analytics import build_timeseries, portfolio_timeseries
+from src.analytics import build_timeseries, portfolio_timeseries, project_csm_runoff
 from src.report import pl_summary, bs_summary, aoc_detail, gl_detail, trial_balance
 from src.disclosures import (
     note1_icl_movement, note2_icl_components,
@@ -993,7 +993,236 @@ with tab_ts:
     )
     st.plotly_chart(fig_und, use_container_width=True)
 
-    # ── Chart 5: Onerous Contract Full Lifecycle ─────────────────────────
+    # ── Chart 5: OCI Cumulative Reserve ──────────────────────────────────
+    st.divider()
+    st.subheader("📊 OCI Cumulative Reserve — Accumulated Insurance Finance Effect")
+    st.markdown("""
+Under the **OCI option** (applied to GMM cohorts), the interest rate change effect
+accumulates in equity as an **OCI Reserve**.  
+- When **rates rise**: OCI Reserve becomes more negative → equity eroded  
+- When **rates fall**: OCI Reserve becomes more positive → equity boosted  
+- The reserve **recycles back to P&L** as contracts run off (over remaining term)
+""")
+
+    # Compute cumulative OCI per cohort across the 4 quarters
+    oci_df = ts_df[ts_df["ifie_oci"] != 0].copy()
+    if not oci_df.empty:
+        oci_df = oci_df.sort_values(["cohort_id", "period"])
+        oci_df["oci_cumulative"] = oci_df.groupby("cohort_id")["ifie_oci"].cumsum()
+
+        # Portfolio-level cumulative OCI
+        port_oci = ts_df.groupby("period")["ifie_oci"].sum().reset_index()
+        port_oci["oci_cumulative"] = port_oci["ifie_oci"].cumsum()
+
+        col_oci1, col_oci2 = st.columns([2, 1])
+
+        with col_oci1:
+            fig_oci = go.Figure()
+            # Portfolio total
+            fig_oci.add_scatter(
+                x=port_oci["period"], y=port_oci["oci_cumulative"],
+                name="Portfolio Total", mode="lines+markers+text",
+                line=dict(color="#1d4ed8", width=3),
+                marker=dict(size=9),
+                text=[f"{v:,.0f}" for v in port_oci["oci_cumulative"]],
+                textposition="top center", textfont=dict(size=9),
+            )
+            # Per-cohort lines
+            for cid in oci_df["cohort_id"].unique():
+                d = oci_df[oci_df["cohort_id"] == cid]
+                fig_oci.add_scatter(
+                    x=d["period"], y=d["oci_cumulative"],
+                    name=cid, mode="lines+markers",
+                    line=dict(width=1.5, dash="dot"),
+                    marker=dict(size=5),
+                )
+            fig_oci.add_hline(y=0, line_dash="dash", line_color="#94a3b8",
+                              annotation_text="Zero line")
+            fig_oci.update_layout(
+                title="Accumulated OCI Reserve by Quarter ('000 HKD)<br>"
+                      "<sup>Negative = equity erosion from rising rates</sup>",
+                height=380, margin=dict(l=40, r=40, t=70, b=40),
+                xaxis_title="Period", yaxis_title="Cumulative OCI ('000 HKD)",
+            )
+            st.plotly_chart(fig_oci, use_container_width=True)
+
+        with col_oci2:
+            # OCI reserve summary table
+            oci_summary = []
+            for cid in oci_df["cohort_id"].unique():
+                d = oci_df[oci_df["cohort_id"] == cid]
+                cumulative_q4 = d.iloc[-1]["oci_cumulative"] if not d.empty else 0
+                quarterly_avg = d["ifie_oci"].mean()
+                oci_summary.append({
+                    "Cohort": cid,
+                    "Q4 Reserve": round(cumulative_q4, 1),
+                    "Avg / Qtr": round(quarterly_avg, 1),
+                })
+            oci_sumdf = pd.DataFrame(oci_summary).sort_values("Q4 Reserve")
+            oci_port_total = port_oci["oci_cumulative"].iloc[-1] if not port_oci.empty else 0
+            oci_sumdf.loc[len(oci_sumdf)] = {
+                "Cohort": "TOTAL",
+                "Q4 Reserve": round(oci_port_total, 1),
+                "Avg / Qtr": round(port_oci["ifie_oci"].mean(), 1),
+            }
+
+            def _oci_style(row):
+                if row["Cohort"] == "TOTAL":
+                    return ["font-weight:700; background-color:#f0f4ff"] * len(row)
+                if isinstance(row["Q4 Reserve"], float) and row["Q4 Reserve"] < 0:
+                    return ["color:#dc2626"] * len(row)
+                return [""] * len(row)
+
+            st.dataframe(
+                oci_sumdf.style.apply(_oci_style, axis=1)
+                    .format({"Q4 Reserve": "{:,.1f}", "Avg / Qtr": "{:,.1f}"}),
+                use_container_width=True, hide_index=True, height=280,
+            )
+            st.caption("""
+**OCI Recycling:** When a GMM contract expires, the entire remaining OCI Reserve
+recycles into P&L as a final IFIE adjustment. For a 10-year GMM cohort,
+a reserve of −200 today would recycle +20/year to P&L income over the remaining life.
+""")
+
+        st.info("""
+**Why GMM only?** PAA contracts typically have < 1-year duration — the DAIR ≈ current rate,
+so there is negligible OCI effect. VFA contracts use the underlying items mechanism
+to absorb most finance effects through CSM, so OCI is generally not applied.
+""")
+
+    # ── Chart 6: CSM Run-off Projection ──────────────────────────────────
+    st.divider()
+    st.subheader("📐 CSM Run-off Projection — Glide Path to Zero")
+    st.markdown("""
+Projects how the **CSM for each cohort will amortise** over future periods,
+based on the **historical quarterly amortisation rate** observed in 2024.  
+This shows the expected **future Insurance Revenue** locked in today's CSM.
+
+For **VFA cohorts**, two additional scenarios illustrate how market movements
+can extend or shorten the CSM life:
+- 🟢 **Bull**: Underlying items grow +0.5%/quarter → CSM receives inflows, runs longer
+- 🔴 **Bear**: Underlying items shrink −0.5%/quarter → CSM depletes faster
+""")
+
+    _runoff_data = project_csm_runoff(all_results, n_quarters=60)
+
+    if _runoff_data:
+        col_ro1, col_ro2 = st.columns([3, 1])
+
+        with col_ro1:
+            fig_ro = go.Figure()
+            _ro_colors = {
+                "GMM": ["#3b82f6", "#60a5fa", "#93c5fd", "#bfdbfe"],
+                "VFA": ["#8b5cf6", "#a78bfa"],
+                "PAA": ["#22c55e"],
+            }
+            _model_color_idx = {"GMM": 0, "VFA": 0, "PAA": 0}
+
+            for cohort_info in _runoff_data:
+                cid   = cohort_info["cohort_id"]
+                model = cohort_info["model"]
+                proj  = cohort_info["projections"]
+                if not proj:
+                    continue
+
+                color_list = _ro_colors.get(model, ["#64748b"])
+                idx = _model_color_idx[model]
+                color = color_list[min(idx, len(color_list) - 1)]
+                _model_color_idx[model] += 1
+
+                x_vals = ["2024Q4"] + [p["label"] for p in proj]
+                y_vals = [cohort_info["closing_csm"]] + [p["csm"] for p in proj]
+
+                fig_ro.add_scatter(
+                    x=x_vals, y=y_vals,
+                    name=f"{cid} ({model})", mode="lines",
+                    line=dict(color=color, width=2.5),
+                    hovertemplate=f"{cid}<br>%{{x}}: CSM = %{{y:,.0f}}<extra></extra>",
+                )
+
+                # VFA: add bull/bear fan
+                if model == "VFA" and cohort_info["bull_proj"] and cohort_info["bear_proj"]:
+                    x_fan = ["2024Q4"] + [p["label"] for p in cohort_info["bull_proj"]]
+                    y_bull = [cohort_info["closing_csm"]] + [p["csm"] for p in cohort_info["bull_proj"]]
+                    y_bear = [cohort_info["closing_csm"]] + [p["csm"] for p in cohort_info["bear_proj"]]
+
+                    fig_ro.add_scatter(
+                        x=x_fan, y=y_bull,
+                        name=f"{cid} Bull 🟢", mode="lines",
+                        line=dict(color=color, width=1, dash="dash"),
+                        showlegend=True,
+                    )
+                    fig_ro.add_scatter(
+                        x=x_fan, y=y_bear,
+                        name=f"{cid} Bear 🔴", mode="lines",
+                        line=dict(color="#ef4444", width=1, dash="dot"),
+                        fill="tonexty", fillcolor="rgba(239,68,68,0.06)",
+                        showlegend=True,
+                    )
+
+            # Shade the projection region
+            fig_ro.add_vrect(
+                x0="2025Q1", x1=_runoff_data[0]["projections"][-1]["label"]
+                    if _runoff_data[0]["projections"] else "2039Q4",
+                fillcolor="rgba(241,245,249,0.4)", layer="below",
+                annotation_text="Projected →", annotation_position="top left",
+            )
+            fig_ro.update_layout(
+                title="CSM Glide Path by Cohort — Base Case + VFA Bull/Bear ('000 HKD)",
+                height=440, margin=dict(l=40, r=40, t=60, b=40),
+                xaxis_title="Quarter", yaxis_title="CSM Balance ('000 HKD)",
+                legend=dict(orientation="v", x=1.01, y=1),
+            )
+            # Only show every 4th tick to avoid crowding
+            fig_ro.update_xaxes(
+                tickmode="array",
+                tickvals=[p["label"] for coh in _runoff_data
+                          for i, p in enumerate(coh["projections"]) if i % 4 == 0][:20],
+                tickangle=-45,
+            )
+            st.plotly_chart(fig_ro, use_container_width=True)
+
+        with col_ro2:
+            st.caption("**Cohort Summary**")
+            _ro_table = []
+            for coh in _runoff_data:
+                proj = coh["projections"]
+                _exhaustion = proj[-1]["label"] if proj and proj[-1]["csm"] < 1 else ">"
+                _total_future_isr = round(sum(p["isr_from_csm"] for p in proj), 0)
+                _ro_table.append({
+                    "Cohort":         coh["cohort_id"],
+                    "Model":          coh["model"],
+                    "Closing CSM":    round(coh["closing_csm"], 0),
+                    "Annual Rate":    f"{coh['annual_rate']:.1%}",
+                    "Future ISR*":    _total_future_isr,
+                    "Exhausted":      _exhaustion,
+                })
+            ro_df = pd.DataFrame(_ro_table)
+            st.dataframe(
+                ro_df.style.format({
+                    "Closing CSM": "{:,.0f}",
+                    "Future ISR*": "{:,.0f}",
+                }).highlight_max(subset=["Closing CSM"], color="#dbeafe"),
+                use_container_width=True, hide_index=True,
+            )
+            st.caption("""
+*Future ISR = projected cumulative Insurance Revenue from CSM amortisation only.
+Excludes expected CF release, RA release, and experience items.
+
+**Annual Rate** = CSM depleted per year under base case assumptions.
+""")
+
+        st.info("""
+**Key Insights:**
+- **VFA** cohorts have much lower annual amortisation rates (12–14%) vs **GMM** (15–37%),
+  reflecting longer duration participating business. But VFA CSM can swing dramatically
+  with underlying asset performance.
+- **MED_ONR_RECOVERY** shows the youngest CSM (just born in Q4 2024 from LC recovery),
+  hence the lowest amortisation rate — this contract has just turned profitable.
+- The CSM Glide Path tells management *how much future profit* is locked into the book today.
+""")
+
+    # ── Chart 8: Onerous Contract Full Lifecycle ──────────────────────────
     st.divider()
     st.subheader("☠️ → 🟢  Onerous Contract Lifecycle — MED_ONR_RECOVERY")
     st.markdown("""
