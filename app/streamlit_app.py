@@ -2351,6 +2351,80 @@ VFA generally does NOT use the OCI option — the underlying items mechanism alr
 routes most IFIE through CSM.
 """)
 
+    st.markdown("#### How does **Assets = Liabilities + Equity** balance when rates rise?")
+    st.markdown("""
+This is the most counter-intuitive part of IFRS 17 OCI accounting.  
+When interest rates rise, **two things happen simultaneously**:
+""")
+
+    _col_oci_a, _col_oci_b = st.columns(2)
+    with _col_oci_a:
+        st.markdown("""
+<div class="concept-card">
+  <div class="concept-title">📉 Liability side — ICL falls</div>
+  <div class="concept-body">
+  Higher discount rate → lower PVFCF<br><br>
+  <b>Journal entry (⑦ IFIE OCI):</b><br>
+  Dr &nbsp;ICL-LRC PVFCF &nbsp;&nbsp;&nbsp;&nbsp;45 &nbsp;← liability ↓<br>
+  &nbsp;&nbsp;Cr &nbsp;OCI — IFIE &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;45 &nbsp;← equity ↓<br><br>
+  Liabilities <b>decrease 45</b>, Equity <b>decreases 45</b>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+    with _col_oci_b:
+        st.markdown("""
+<div class="concept-card">
+  <div class="concept-title">📉 Asset side — Bond value falls</div>
+  <div class="concept-body">
+  Higher rates → bond prices fall (IFRS 9 fair value)<br><br>
+  <b>Journal entry (IFRS 9 bond revaluation):</b><br>
+  Dr &nbsp;OCI — Bond FV &nbsp;&nbsp;&nbsp;&nbsp;45 &nbsp;← equity ↓<br>
+  &nbsp;&nbsp;Cr &nbsp;Investment Assets &nbsp;&nbsp;45 &nbsp;← asset ↓<br><br>
+  Assets <b>decrease 45</b>, Equity <b>decreases 45</b>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+    st.markdown("""
+**Combined balance sheet effect (rate rise of +Δr):**
+
+```
+                    Before          After           Change
+── Assets ──
+  Bond (fair value)   50,000         49,955            −45   ← IFRS 9 OCI
+  Other assets        10,000         10,000              0
+  Total Assets        60,000         59,955            −45
+
+── Liabilities ──
+  ICL-LRC PVFCF      (15,000)       (14,955)           +45   ← IFRS 17 OCI (liability falls)
+
+── Equity ──
+  Retained Earnings   44,500         44,500              0   ← P&L untouched
+  Accumulated OCI        500            410            −90   ← bond OCI (−45) + ICL OCI (−45)
+  Total Equity        45,000         44,910            −90
+
+  Total L + E         60,000         59,955   ✓  (−45 = −45)
+```
+
+Both sides fall by **45** — the equation balances perfectly.
+""")
+
+    st.info("""
+**Why does equity fall on both sides?**
+
+- The **bond you hold** becomes worth less (asset ↓) → OCI loss
+- The **liability you owe** also becomes worth less (liability ↓) → OCI gain
+
+These two OCI effects largely **cancel each other out** at the equity level — this is 
+called **ALM symmetry** (Asset-Liability Management matching).  
+The entire point of routing both through OCI (instead of P&L) is to keep the income 
+statement stable while the balance sheet reflects current market values.
+
+When contracts eventually **run off**, the accumulated OCI is recycled back to P&L,  
+releasing the deferred gain/loss over the remaining contract lifetime.
+""")
+
     # ── Section 5: Reinsurance RCA ────────────────────────────────────────
     st.markdown("### 5. Quota Share Reinsurance — RCA")
     st.markdown("""
