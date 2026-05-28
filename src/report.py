@@ -383,6 +383,30 @@ def export_to_excel(
 # PDF 报告（fpdf2）
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _pdf_safe(text: str) -> str:
+    """将字符串中无法用 latin-1 编码的字符替换为 ASCII 等价符，供 fpdf 使用。"""
+    replacements = {
+        "\u2014": " - ",   # em-dash
+        "\u2013": " - ",   # en-dash
+        "\u2018": "'",     # left single quote
+        "\u2019": "'",     # right single quote
+        "\u201c": '"',     # left double quote
+        "\u201d": '"',     # right double quote
+        "\u2026": "...",   # ellipsis
+        "\u00b7": ".",     # middle dot
+        "\u2192": "->",    # right arrow
+        "\u2190": "<-",    # left arrow
+        "\u00a0": " ",     # non-breaking space
+        "\u00e9": "e",     # é
+        "\u00e8": "e",     # è
+        "\u00fc": "u",     # ü
+    }
+    for src, dst in replacements.items():
+        text = text.replace(src, dst)
+    # 最后兜底：移除仍无法 latin-1 编码的字符
+    return text.encode("latin-1", errors="ignore").decode("latin-1")
+
+
 def write_pdf_report(
     sheets: Dict[str, pd.DataFrame],
     buf,
@@ -417,7 +441,7 @@ def write_pdf_report(
             self.set_text_color(100, 100, 100)
             _ts = datetime.now().strftime("%d %b %Y  %H:%M")
             self.cell(0, 6,
-                      f"Period: {period}   |   Generated: {_ts}   |   Amounts in '000 HKD",
+                      _pdf_safe(f"Period: {period}   |   Generated: {_ts}   |   Amounts in '000 HKD"),
                       ln=True, align="C")
             self.ln(3)
 
@@ -426,7 +450,7 @@ def write_pdf_report(
             self.set_font("Helvetica", "I", 8)
             self.set_text_color(150, 150, 150)
             self.cell(0, 8,
-                      f"Page {self.page_no()} | Built by Woming Qiu (womingqiu@gmail.com) | Demo data only. Not for regulatory use.",
+                      _pdf_safe(f"Page {self.page_no()} | Built by Woming Qiu (womingqiu@gmail.com) | Demo data only. Not for regulatory use."),
                       align="C")
 
     pdf = _PDF(orientation="L", unit="mm", format="A4")
@@ -438,8 +462,8 @@ def write_pdf_report(
             continue
         pdf.add_page()
 
-        # Section title (strip em-dash for latin-1 font compatibility)
-        _safe_name = sheet_name.replace("\u2014", " - ").replace("\u2013", " - ")
+        # Section title
+        _safe_name = _pdf_safe(sheet_name)
         pdf.set_font("Helvetica", "B", 11)
         pdf.set_text_color(30, 58, 95)
         pdf.cell(0, 8, _safe_name, ln=True)
@@ -462,7 +486,7 @@ def write_pdf_report(
         pdf.set_fill_color(189, 215, 238)     # light blue
         pdf.set_text_color(30, 58, 95)
         for w, col in zip(col_widths, _cols):
-            pdf.cell(w, 7, str(col)[:18], border=1, align="C", fill=True)
+            pdf.cell(w, 7, _pdf_safe(str(col))[:20], border=1, align="C", fill=True)
         pdf.ln()
 
         # 数据行
@@ -488,14 +512,14 @@ def write_pdf_report(
                 else:
                     pdf.set_text_color(0, 0, 0)
                     txt = str(val) if not pd.isna(val) else ""
-                    txt = txt.replace("__TOTAL__", "TOTAL")
-                    pdf.cell(w, 6, txt[:22], border=1, align="L", fill=is_total)
+                    txt = _pdf_safe(txt.replace("__TOTAL__", "TOTAL"))
+                    pdf.cell(w, 6, txt[:28], border=1, align="L", fill=is_total)
             pdf.ln()
 
         if len(df) > max_rows:
             pdf.set_font("Helvetica", "I", 7)
             pdf.set_text_color(120, 120, 120)
-            pdf.cell(0, 5, f"  … {len(df) - max_rows} more rows truncated in PDF. See Excel export for full data.", ln=True)
+            pdf.cell(0, 5, f"  ... {len(df) - max_rows} more rows truncated in PDF. See Excel export for full data.", ln=True)
 
     raw = pdf.output()
     if isinstance(raw, (bytes, bytearray)):
