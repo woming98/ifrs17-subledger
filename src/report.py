@@ -228,9 +228,7 @@ def _style_sheet(
       - 自动列宽（最大 40）；冻结前 3 行
     """
     try:
-        from openpyxl.styles import (
-            Font, PatternFill, Alignment, Border, Side, numbers
-        )
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
         from openpyxl.utils import get_column_letter
     except ImportError:
         return   # openpyxl not available, skip styling
@@ -240,15 +238,11 @@ def _style_sheet(
     BLUE_LIGHT  = PatternFill("solid", fgColor="BDD7EE")   # header bg
     GRAY_LIGHT  = PatternFill("solid", fgColor="F2F2F2")   # total bg
     GRAY_TS     = PatternFill("solid", fgColor="D9D9D9")   # timestamp bg
-    RED_FONT    = Font(color="C00000")
     WHITE_FONT  = Font(color="FFFFFF", bold=True, size=11)
     HEADER_FONT = Font(bold=True, size=10)
     TOTAL_FONT  = Font(bold=True, size=10)
     TS_FONT     = Font(italic=True, size=9, color="595959")
-    THIN        = Side(style="thin", color="B8B8B8")
-    BORDER      = Border(bottom=Side(style="thin", color="B8B8B8"))
     NUM_FMT     = '#,##0.00'
-    NUM_FMT_INT = '#,##0'
 
     ncols = len(df.columns)
     last_col_letter = get_column_letter(ncols)
@@ -290,7 +284,7 @@ def _style_sheet(
         numeric_cols = numeric_cols.union(set(num_cols))
 
     for row_idx, row_data in enumerate(df.itertuples(index=False), start=4):
-        is_total = str(getattr(row_data, df.columns[0], "")).startswith(total_marker)
+        is_total = str(row_data[0]).startswith(total_marker)
         for col_idx, (col_name, val) in enumerate(zip(df.columns, row_data), start=1):
             cell = ws.cell(row=row_idx, column=col_idx)
             cell.value = val if not (isinstance(val, float) and pd.isna(val)) else None
