@@ -560,11 +560,10 @@ with tab_dash:
                 return ["background-color:#f0fdf4"] * len(row)
             return [""] * len(row)
 
-        st.dataframe(
-            _cohort_snap.style.apply(_snap_style, axis=1)
-                .format({"ICL": "{:,.0f}", "CSM": "{:,.0f}", "LC": "{:,.0f}"}),
-            use_container_width=True, hide_index=True, height=330,
-        )
+        _snap_num = {c: st.column_config.NumberColumn(c, format="%,.0f")
+                     for c in ["ICL", "CSM", "LC"] if c in _cohort_snap.columns}
+        st.dataframe(_cohort_snap, use_container_width=True, hide_index=True,
+                     height=330, column_config=_snap_num)
 
     st.divider()
 
@@ -715,10 +714,9 @@ with tab_pl:
                 unsafe_allow_html=True)
 
     pl_df = pl_summary(aoc_list, rca_list)
-    st.dataframe(
-        pl_df.style.format({c: "{:,.2f}" for c in pl_df.select_dtypes("number").columns}),
-        use_container_width=True, height=300,
-    )
+    _pl_cfg = {c: st.column_config.NumberColumn(c, format="%,.2f")
+               for c in pl_df.select_dtypes("number").columns}
+    st.dataframe(pl_df, use_container_width=True, height=300, column_config=_pl_cfg)
 
     plot_df = pl_df[pl_df["cohort_id"] != "__TOTAL__"]
     fig_pl  = go.Figure()
@@ -750,10 +748,9 @@ with tab_bs:
                 unsafe_allow_html=True)
 
     bs_df = bs_summary(aoc_list, rca_list)
-    st.dataframe(
-        bs_df.style.format({c: "{:,.2f}" for c in bs_df.select_dtypes("number").columns}),
-        use_container_width=True, height=300,
-    )
+    _bs_cfg = {c: st.column_config.NumberColumn(c, format="%,.2f")
+               for c in bs_df.select_dtypes("number").columns}
+    st.dataframe(bs_df, use_container_width=True, height=300, column_config=_bs_cfg)
 
     plot_bs = bs_df[bs_df["cohort_id"] != "__TOTAL__"]
     fig_bs  = go.Figure()
@@ -833,10 +830,11 @@ with tab_gl:
     if sel_acc    != "(All)": filtered = filtered[filtered["account_code"] == sel_acc]
 
     st.caption(f"Showing {len(filtered)} of {len(gl_df)} rows")
-    st.dataframe(
-        filtered.style.format({"debit": "{:,.2f}", "credit": "{:,.2f}"}),
-        use_container_width=True, height=460,
-    )
+    _gl_cfg = {
+        "debit":  st.column_config.NumberColumn("debit",  format="%,.2f"),
+        "credit": st.column_config.NumberColumn("credit", format="%,.2f"),
+    }
+    st.dataframe(filtered, use_container_width=True, height=460, column_config=_gl_cfg)
 
     csv_buf = io.StringIO()
     gl_df.to_csv(csv_buf, index=False, encoding="utf-8")
@@ -1076,11 +1074,12 @@ accumulates in equity as an **OCI Reserve**.
                     return ["color:#dc2626"] * len(row)
                 return [""] * len(row)
 
-            st.dataframe(
-                oci_sumdf.style.apply(_oci_style, axis=1)
-                    .format({"Q4 Reserve": "{:,.1f}", "Avg / Qtr": "{:,.1f}"}),
-                use_container_width=True, hide_index=True, height=280,
-            )
+            _oci_sum_cfg = {
+                "Q4 Reserve": st.column_config.NumberColumn("Q4 Reserve", format="%,.1f"),
+                "Avg / Qtr":  st.column_config.NumberColumn("Avg / Qtr",  format="%,.1f"),
+            }
+            st.dataframe(oci_sumdf, use_container_width=True, hide_index=True,
+                         height=280, column_config=_oci_sum_cfg)
             st.caption("""
 **OCI Recycling:** When a GMM contract expires, the entire remaining OCI Reserve
 recycles into P&L as a final IFIE adjustment. For a 10-year GMM cohort,
@@ -1201,13 +1200,12 @@ can extend or shorten the CSM life:
                     "Exhausted":      _exhaustion,
                 })
             ro_df = pd.DataFrame(_ro_table)
-            st.dataframe(
-                ro_df.style.format({
-                    "Closing CSM": "{:,.0f}",
-                    "Future ISR*": "{:,.0f}",
-                }).highlight_max(subset=["Closing CSM"], color="#dbeafe"),
-                use_container_width=True, hide_index=True,
-            )
+            _ro_cfg = {
+                "Closing CSM": st.column_config.NumberColumn("Closing CSM", format="%,.0f"),
+                "Future ISR*": st.column_config.NumberColumn("Future ISR*", format="%,.0f"),
+            }
+            st.dataframe(ro_df, use_container_width=True, hide_index=True,
+                         column_config=_ro_cfg)
             st.caption("""
 *Future ISR = projected cumulative Insurance Revenue from CSM amortisation only.
 Excludes expected CF release, RA release, and experience items.
@@ -1619,14 +1617,9 @@ rather than P&L.  This builds up an **OCI Reserve** in shareholders' equity over
                 return ["font-weight:700; background-color:#f0f4ff"] * len(row)
             return [""] * len(row)
 
-        st.dataframe(
-            _oci_summary_df.style.apply(_oci_style, axis=1)
-                .format({"OCI Reserve": "{:+,.1f}"})
-                .map(lambda v: "color:#16a34a" if isinstance(v, float) and v < 0 else
-                               ("color:#dc2626" if isinstance(v, float) and v > 0 else ""),
-                     subset=["OCI Reserve"]),
-            use_container_width=True, height=320,
-        )
+        _oci_cfg = {"OCI Reserve": st.column_config.NumberColumn("OCI Reserve", format="%+,.1f")}
+        st.dataframe(_oci_summary_df, use_container_width=True, height=320,
+                     column_config=_oci_cfg)
 
         # ── Rate shock impact calculator ──────────────────────────────────
         st.markdown("---")
@@ -1658,8 +1651,10 @@ rather than P&L.  This builds up an **OCI Reserve** in shareholders' equity over
                 st.success(f"OCI Reserve change: **{_sign}{_oci_shock_total:,.0f}** '000 HKD  \n"
                            f"→ Shareholders' equity **increases** (OCI income)")
             if _oci_shock_rows:
-                st.dataframe(pd.DataFrame(_oci_shock_rows).style.format({"ΔOCI": "{:+,.0f}"}),
-                             use_container_width=True, height=200, hide_index=True)
+                _shock_df = pd.DataFrame(_oci_shock_rows)
+                _shock_cfg = {"ΔOCI": st.column_config.NumberColumn("ΔOCI", format="%+,.0f")}
+                st.dataframe(_shock_df, use_container_width=True, height=200,
+                             hide_index=True, column_config=_shock_cfg)
         else:
             st.caption("Move the slider to estimate the OCI impact of a rate shock.")
 
@@ -1676,10 +1671,9 @@ rather than P&L.  This builds up an **OCI Reserve** in shareholders' equity over
 
     # ── Raw time series table ─────────────────────────────────────────────
     with st.expander("View raw time series data"):
-        st.dataframe(
-            ts_df.style.format({c: "{:,.2f}" for c in ts_df.select_dtypes("number").columns}),
-            use_container_width=True, height=400,
-        )
+        _ts_cfg = {c: st.column_config.NumberColumn(c, format="%,.2f")
+                   for c in ts_df.select_dtypes("number").columns}
+        st.dataframe(ts_df, use_container_width=True, height=400, column_config=_ts_cfg)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1915,13 +1909,10 @@ All amounts in **HKD '000**. Intra-ICL transfers (CSM/PVFCF reclassifications) a
 
     n1 = note1_icl_movement(all_results, _YEAR)
     if not n1.empty:
-        numeric_cols = [c for c in n1.columns if c in ["GMM", "VFA", "PAA", "Total"]]
-        fmt_dict = {c: "{:,.1f}" for c in numeric_cols}
-        st.dataframe(
-            n1.style.format(fmt_dict, na_rep=""),
-            use_container_width=True,
-            height=550,
-        )
+        _n1_num = [c for c in n1.columns if c in ["GMM", "VFA", "PAA", "Total"]]
+        _n1_cfg = {c: st.column_config.NumberColumn(c, format="%.1f") for c in _n1_num}
+        st.dataframe(n1.reset_index(), use_container_width=True, height=550,
+                     column_config=_n1_cfg)
 
         # Visual: Net change by model bar chart
         with st.expander("📊 Visual: Net ICL Change by Model & Movement Category"):
@@ -1975,12 +1966,10 @@ All amounts in **HKD '000**. Intra-ICL transfers (CSM/PVFCF reclassifications) a
 
     n2 = note2_icl_components(all_results, _YEAR)
     if not n2.empty:
-        num_cols_n2 = n2.select_dtypes("number").columns.tolist()
-        st.dataframe(
-            n2.style.format("{:,.1f}", subset=num_cols_n2, na_rep=""),
-            use_container_width=True,
-            height=500,
-        )
+        _n2_num = n2.select_dtypes("number").columns.tolist()
+        _n2_cfg = {c: st.column_config.NumberColumn(c, format="%.1f") for c in _n2_num}
+        st.dataframe(n2.reset_index(), use_container_width=True, height=500,
+                     column_config=_n2_cfg)
 
         # Stacked bar: opening vs closing by model
         with st.expander("📊 Visual: Opening vs Closing ICL by Component"):
@@ -2014,13 +2003,9 @@ All amounts in **HKD '000**. Intra-ICL transfers (CSM/PVFCF reclassifications) a
 
     n3 = note3_insurance_revenue(all_results, _YEAR)
     if not n3.empty:
-        num_cols_n3 = n3.select_dtypes("number").columns.tolist()
-        _n3_style = n3.style.format("{:,.1f}", subset=num_cols_n3, na_rep="")
-        if "Total Insurance Revenue (ISR)" in n3.columns:
-            _n3_style = _n3_style.bar(
-                subset=["Total Insurance Revenue (ISR)"], color="#bbf7d0", vmin=0
-            )
-        st.dataframe(_n3_style, use_container_width=True)
+        _n3_num = n3.select_dtypes("number").columns.tolist()
+        _n3_cfg = {c: st.column_config.NumberColumn(c, format="%.1f") for c in _n3_num}
+        st.dataframe(n3.reset_index(), use_container_width=True, column_config=_n3_cfg)
 
         st.info("""
 **Reading guide:**
@@ -2037,11 +2022,9 @@ All amounts in **HKD '000**. Intra-ICL transfers (CSM/PVFCF reclassifications) a
 
     n4 = note4_ifie(all_results, _YEAR)
     if not n4.empty:
-        num_cols_n4 = n4.select_dtypes("number").columns.tolist()
-        st.dataframe(
-            n4.style.format("{:,.1f}", subset=num_cols_n4, na_rep=""),
-            use_container_width=True,
-        )
+        _n4_num = n4.select_dtypes("number").columns.tolist()
+        _n4_cfg = {c: st.column_config.NumberColumn(c, format="%.1f") for c in _n4_num}
+        st.dataframe(n4.reset_index(), use_container_width=True, column_config=_n4_cfg)
         st.info("""
 **OCI option explained:** Under the OCI option (applied to GMM cohorts here), the total IFIE is split:  
 — **P&L**: Uses the DAIR (locked-in rate at inception). Stable, predictable line in the income statement.  
@@ -2060,11 +2043,9 @@ VFA contracts generally don't use the OCI option — the underlying items mechan
     _all_rca_flat = [r for rcas in all_rca.values() for r in rcas]
     n5 = note5_rca_movement(_all_rca_flat, _YEAR)
     if not n5.empty:
-        num_cols_n5 = n5.select_dtypes("number").columns.tolist()
-        st.dataframe(
-            n5.style.format("{:,.1f}", subset=num_cols_n5, na_rep=""),
-            use_container_width=True,
-        )
+        _n5_num = n5.select_dtypes("number").columns.tolist()
+        _n5_cfg = {c: st.column_config.NumberColumn(c, format="%.1f") for c in _n5_num}
+        st.dataframe(n5.reset_index(), use_container_width=True, column_config=_n5_cfg)
         st.caption("""
 *RCA is presented as an asset (positive = recoverable from reinsurers).  
 The movement mirrors the gross ICL at the effective cession rate per cohort.*
@@ -2077,12 +2058,10 @@ The movement mirrors the gross ICL at the effective cession rate per cohort.*
 
     n6 = note6_maturity_profile(all_results, _YEAR)
     if not n6.empty:
-        bucket_cols = ["< 1 year", "1 – 3 years", "3 – 5 years", "> 5 years", "Grand Total"]
-        fmt_cols = {c: "{:,.1f}" for c in bucket_cols if c in n6.columns}
-        _n6_style = n6.style.format(fmt_cols, na_rep="")
-        if "Grand Total" in n6.columns:
-            _n6_style = _n6_style.bar(subset=["Grand Total"], color="#dbeafe", vmin=0)
-        st.dataframe(_n6_style, use_container_width=True, height=380)
+        _n6_num = n6.select_dtypes("number").columns.tolist()
+        _n6_cfg = {c: st.column_config.NumberColumn(c, format="%.1f") for c in _n6_num}
+        st.dataframe(n6.reset_index(), use_container_width=True, height=380,
+                     column_config=_n6_cfg)
 
         # Stacked bar chart
         with st.expander("📊 Visual: Maturity Distribution by Cohort"):
@@ -2121,14 +2100,9 @@ The movement mirrors the gross ICL at the effective cession rate per cohort.*
 
     nd = note1_cohort_detail(all_results, _YEAR)
     if not nd.empty:
-        fmt_nd = {c: "{:,.1f}" for c in nd.select_dtypes("number").columns}
-        _nd_style = nd.style.format(fmt_nd, na_rep="")
-        if "Closing CSM" in nd.columns:
-            try:
-                _nd_style = _nd_style.highlight_max(subset=["Closing CSM"], color="#dcfce7")
-            except Exception:
-                pass
-        st.dataframe(_nd_style, use_container_width=True)
+        _nd_num = nd.select_dtypes("number").columns.tolist()
+        _nd_cfg = {c: st.column_config.NumberColumn(c, format="%.1f") for c in _nd_num}
+        st.dataframe(nd.reset_index(), use_container_width=True, column_config=_nd_cfg)
 
     # ── Excel download ─────────────────────────────────────────────────────
     st.markdown("---")
