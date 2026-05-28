@@ -186,6 +186,9 @@ AOC 9-item · OCI option · Onerous lifecycle ·
 Disclosure Notes 1–6 · CSM Run-off projection
 
 ---
+👤 **Woming Qiu** — Actuarial Analyst · Nearly FSA  
+📧 womingqiu@gmail.com
+
 📂 [GitHub](https://github.com/woming98/ifrs17-subledger)  
 🚀 [Live App](https://ifrs17-subledger.streamlit.app/)
 
@@ -2896,5 +2899,6 @@ with col_info:
     st.caption("""
 **IFRS 17 Subledger Demo** · Python 3.10+ · Streamlit · Plotly  
 Models: GMM (IFRS 17.32–52) · PAA (IFRS 17.53–59) · VFA (IFRS 17.45A–45D)  
+Built by **Woming Qiu** · Actuarial Analyst · Nearly FSA · womingqiu@gmail.com  
 [github.com/woming98/ifrs17-subledger](https://github.com/woming98/ifrs17-subledger)
 """)

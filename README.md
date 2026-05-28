@@ -274,6 +274,13 @@ Generates all 6 standard disclosure tables required by IFRS 17.97–132:
 
 ---
 
+## Author
+
+**Woming Qiu** — Actuarial Analyst · Nearly FSA  
+📧 [womingqiu@gmail.com](mailto:womingqiu@gmail.com)
+
+---
+
 ## Background
 
 Built as a portfolio project to demonstrate actuarial and financial modelling expertise
@@ -285,4 +292,4 @@ finance subledgers that generate compliant GL entries and regulatory disclosures
 
 ## License
 
-MIT © 2025
+MIT © 2025 Woming Qiu

@@ -425,7 +425,8 @@ def write_pdf_report(
             self.set_y(-12)
             self.set_font("Helvetica", "I", 8)
             self.set_text_color(150, 150, 150)
-            self.cell(0, 8, f"Page {self.page_no()} - Demo data only. Not for regulatory use.",
+            self.cell(0, 8,
+                      f"Page {self.page_no()} | Built by Woming Qiu (womingqiu@gmail.com) | Demo data only. Not for regulatory use.",
                       align="C")
 
     pdf = _PDF(orientation="L", unit="mm", format="A4")
