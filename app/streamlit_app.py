@@ -2395,57 +2395,57 @@ current, explicit, and unbiased estimates — and to recognise profit only as in
 service is delivered.
 """)
 
-    # ── Architecture Flow Diagram ─────────────────────────────────────────
+    # ── Architecture Flow Diagram (HTML — Plotly axref=paper not supported on Cloud) ──
     st.markdown("### 🗺️ System Architecture — From Actuarial Output to Disclosures")
+    st.markdown("""
+<div style="display:flex; align-items:center; justify-content:center;
+            gap:0; padding:18px 0; flex-wrap:nowrap; overflow-x:auto;">
 
-    _nodes_x = [0.05, 0.25, 0.50, 0.75, 0.95]
-    _nodes_y = [0.5,  0.5,  0.5,  0.5,  0.5 ]
-    _node_labels = [
-        "📄 Actuarial\nOutput CSV\n(Prophet/MoSes)",
-        "⚙️ AOC Engine\nGMM · PAA · VFA\n9-item decomposition",
-        "📒 GL Journal\nGenerator\n(Dr = Cr)",
-        "📊 Reports\nP&L · BS · Trial\nBalance",
-        "📋 Disclosures\nNote 1–6\nExcel / PDF",
-    ]
-    _node_colors = ["#dbeafe", "#ede9fe", "#fef3c7", "#dcfce7", "#fee2e2"]
-    _edge_pairs = [(0,1),(1,2),(2,3),(3,4)]
+  <div style="background:#dbeafe; border:1.5px solid #93c5fd; border-radius:10px;
+              padding:14px 12px; min-width:130px; text-align:center; flex:1; max-width:160px;">
+    <div style="font-size:22px;">📄</div>
+    <div style="font-weight:700; font-size:13px; color:#1e3a5f; margin-top:4px;">Actuarial CSV</div>
+    <div style="font-size:11px; color:#475569; margin-top:3px;">Prophet / MoSes<br>output format</div>
+  </div>
 
-    _fig_arch = go.Figure()
+  <div style="font-size:26px; color:#94a3b8; padding:0 6px; flex-shrink:0;">&#x2192;</div>
 
-    # Edges
-    for _i, _j in _edge_pairs:
-        _fig_arch.add_annotation(
-            x=_nodes_x[_j] - 0.03, y=_nodes_y[_j],
-            ax=_nodes_x[_i] + 0.03, ay=_nodes_y[_i],
-            xref="paper", yref="paper", axref="paper", ayref="paper",
-            showarrow=True, arrowhead=3, arrowsize=1.5,
-            arrowwidth=2, arrowcolor="#94a3b8",
-        )
+  <div style="background:#ede9fe; border:1.5px solid #c4b5fd; border-radius:10px;
+              padding:14px 12px; min-width:130px; text-align:center; flex:1; max-width:160px;">
+    <div style="font-size:22px;">⚙️</div>
+    <div style="font-weight:700; font-size:13px; color:#1e3a5f; margin-top:4px;">AOC Engine</div>
+    <div style="font-size:11px; color:#475569; margin-top:3px;">GMM · PAA · VFA<br>9-item breakdown</div>
+  </div>
 
-    # Nodes
-    for _k, (_lx, _ly, _lbl, _col) in enumerate(
-            zip(_nodes_x, _nodes_y, _node_labels, _node_colors)):
-        _fig_arch.add_shape(
-            type="rect",
-            x0=_lx - 0.085, y0=_ly - 0.28, x1=_lx + 0.085, y1=_ly + 0.28,
-            xref="paper", yref="paper",
-            fillcolor=_col, line=dict(color="#94a3b8", width=1.5),
-        )
-        _fig_arch.add_annotation(
-            x=_lx, y=_ly, xref="paper", yref="paper",
-            text=_lbl.replace("\n", "<br>"),
-            showarrow=False,
-            font=dict(size=11, color="#1e293b"),
-            align="center",
-        )
+  <div style="font-size:26px; color:#94a3b8; padding:0 6px; flex-shrink:0;">&#x2192;</div>
 
-    _fig_arch.update_layout(
-        height=220, margin=dict(l=10, r=10, t=10, b=10),
-        xaxis=dict(visible=False, range=[0, 1]),
-        yaxis=dict(visible=False, range=[0, 1]),
-        plot_bgcolor="white", paper_bgcolor="white",
-    )
-    st.plotly_chart(_fig_arch, use_container_width=True)
+  <div style="background:#fef3c7; border:1.5px solid #fcd34d; border-radius:10px;
+              padding:14px 12px; min-width:130px; text-align:center; flex:1; max-width:160px;">
+    <div style="font-size:22px;">📒</div>
+    <div style="font-weight:700; font-size:13px; color:#1e3a5f; margin-top:4px;">GL Journal</div>
+    <div style="font-size:11px; color:#475569; margin-top:3px;">Subledger entries<br>Dr = Cr verified</div>
+  </div>
+
+  <div style="font-size:26px; color:#94a3b8; padding:0 6px; flex-shrink:0;">&#x2192;</div>
+
+  <div style="background:#dcfce7; border:1.5px solid #86efac; border-radius:10px;
+              padding:14px 12px; min-width:130px; text-align:center; flex:1; max-width:160px;">
+    <div style="font-size:22px;">📊</div>
+    <div style="font-weight:700; font-size:13px; color:#1e3a5f; margin-top:4px;">Reports</div>
+    <div style="font-size:11px; color:#475569; margin-top:3px;">P&amp;L · BS<br>Trial Balance</div>
+  </div>
+
+  <div style="font-size:26px; color:#94a3b8; padding:0 6px; flex-shrink:0;">&#x2192;</div>
+
+  <div style="background:#fee2e2; border:1.5px solid #fca5a5; border-radius:10px;
+              padding:14px 12px; min-width:130px; text-align:center; flex:1; max-width:160px;">
+    <div style="font-size:22px;">📋</div>
+    <div style="font-weight:700; font-size:13px; color:#1e3a5f; margin-top:4px;">Disclosures</div>
+    <div style="font-size:11px; color:#475569; margin-top:3px;">Notes 1–6<br>Excel / PDF</div>
+  </div>
+
+</div>
+""", unsafe_allow_html=True)
     st.caption("Each arrow represents a data handoff. The subledger is the middle layer — it reads AOC results and writes balanced GL entries.")
 
     st.divider()
