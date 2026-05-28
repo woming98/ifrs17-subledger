@@ -199,7 +199,66 @@ COHORTS = [
         ],
     },
 
-    # ── 4. MED_PAA ───────────────────────────────────────────────────────────
+    # ── 4. MED_ONR_RECOVERY — Onerous → Full Recovery Lifecycle ─────────────
+    #
+    # 展示 IFRS 17 亏损合同完整生命周期（面试最高频考点）：
+    #
+    #   Opening : LC = 750（首次确认亏损，高额 LC）
+    #   Q1      : 经验差异恶化 → 额外 LC 确认（lc_reversal > 0）LC 升至 830
+    #   Q2      : 企稳，正常服务期 LC 释放（lc_reversal < 0）
+    #   Q3      : 重大假设改善 → 大额 lc_reversal，LC 从 730 降至 115
+    #   Q4      : 最后 115 LC 全部释放 + assumption_chg_csm 形成 CSM 160
+    #             → LC = 0，CSM = 160，合同恢复盈利！
+    #
+    # IFRS 17 关键规则：
+    #   - lc_reversal > 0（正）：确认额外亏损 → Dr ISE / Cr ICL_LC
+    #   - lc_reversal < 0（负）：服务期释放  → Dr ICL_LC / Cr ISR
+    #   - LC → 0 且改善超出 LC：超额进 CSM   → Dr ICL_PVFCF / Cr ICL_CSM
+    {
+        "cohort_id": "MED_ONR_RECOVERY",
+        "product":   "Medical Non-Par LT (Onerous→Recovery)",
+        "model":     "GMM",
+        "currency":  "HKD",
+        "cession_rate": 0.00,
+        "dair":          0.016,
+        # Day-1 recognition: PVFCF + RA > 0 → onerous, LC = 750, CSM = 0
+        "opening":  {"pvfcf": 5000.0, "ra": 250.0, "csm": 0.0, "lc": 750.0},
+        "quarters": [
+            # ── Q1 2024: FURTHER DETERIORATION ──────────────────────────────
+            # Bad claims experience forces additional LC recognition (lc_reversal > 0)
+            # Net ICL barely changes; but the LC INCREASES (contract gets worse)
+            {"ra_release": -12, "pvfcf_cf_release": -175, "experience_var": 90,
+             "lc_reversal": 80,   # POSITIVE = additional LC Dr ISE / Cr ICL_LC
+             "finance_charge_pl": 16.5},
+            # After Q1: LC = 830 (worsened!), CSM = 0 → still deeply onerous
+
+            # ── Q2 2024: STABILIZATION ──────────────────────────────────────
+            # Claims normalise; regular service-delivery LC release begins
+            {"ra_release": -12, "pvfcf_cf_release": -180, "experience_var": 40,
+             "lc_reversal": -100,  # NEGATIVE = service release Dr ICL_LC / Cr ISR
+             "finance_charge_pl": 15.0},
+            # After Q2: LC = 730, still onerous but stabilizing
+
+            # ── Q3 2024: MAJOR ASSUMPTION IMPROVEMENT ───────────────────────
+            # Medical cost trend assumption revised downward (major good news)
+            # Large LC release (service delivery + assumption improvement combined)
+            {"ra_release": -12, "pvfcf_cf_release": -175, "experience_var": 20,
+             "lc_reversal": -615,  # BIG release: service + assumption improvement
+             "finance_charge_pl": 14.0},
+            # After Q3: LC = 115 (from 730, almost cleared!)
+
+            # ── Q4 2024: FULL RECOVERY ───────────────────────────────────────
+            # Last LC cleared; excess improvement forms NEW CSM → profitable!
+            # This is the key IFRS 17 onerous → profitable crossover moment
+            {"ra_release": -12, "pvfcf_cf_release": -170, "experience_var": 15,
+             "lc_reversal": -115,   # Clears the LAST of LC (Dr ICL_LC / Cr ISR)
+             "finance_charge_pl": 12.0,
+             "assumption_chg_csm": 160},  # Excess improvement → NEW CSM BORN!
+            # After Q4: LC = 0, CSM = 160 → CONTRACT IS PROFITABLE AGAIN! 🎉
+        ],
+    },
+
+    # ── 5. MED_PAA ───────────────────────────────────────────────────────────
     {
         "cohort_id": "MED_PAA",
         "product":   "Medical Non-Par ST (PAA)",

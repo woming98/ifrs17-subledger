@@ -3,7 +3,7 @@ IFRS 17 Subledger — Streamlit App (Phase 2)
 
 New in Phase 2:
   - VFA (Variable Fee Approach) for participating contracts
-  - Multi-period roll-forward (4 quarters, 7 cohorts)
+  - Multi-period roll-forward (4 quarters, 8 cohorts)
   - Time Series charts: ICL / CSM / ISR trends
   - "How It Works" explainer tab
 
@@ -140,7 +140,8 @@ with st.sidebar:
 - <span class="badge-gmm">GMM</span> TERM_GMM_2022 — Term 5Y<br>
   &nbsp;&nbsp;🔀 **Layered XL**: L1(0–300k) Hanover 20% · L2(300k–600k) MR 20% + BOC 80%
 - <span class="badge-gmm">GMM</span> MED_GMM_2021 — Medical LT · QS 20% Munich Re
-- <span class="badge-gmm">GMM</span> MED_GMM_ONR — Onerous · QS 15% Munich Re
+- <span class="badge-gmm">GMM</span> MED_GMM_ONR — Onerous · No RI
+- <span class="badge-gmm">GMM</span> MED_ONR_RECOVERY — ☠️→🟢 Onerous→Profitable · No RI
 - <span class="badge-paa">PAA</span> MED_PAA — Medical ST · QS 25% Hannover Life Re
 - <span class="badge-paa">PAA</span> RIDER_PAA — Rider ST · No RI
 - <span class="badge-vfa">VFA</span> WL_VFA_2019 — Whole Life Par · QS 20% Swiss Re
@@ -155,7 +156,7 @@ with st.sidebar:
 st.title("📊 IFRS 17 Subledger — Full Process Demo")
 st.markdown("""
 > **Coverage**: GMM · PAA · **VFA** · Quota Share + **Layered XL** RCA · AOC 9-step decomposition  
-> **Multi-period**: 7 cohorts × 4 quarters · **Sensitivity analysis** · Custom CSV upload  
+> **Multi-period**: 8 cohorts × 4 quarters · **Sensitivity analysis** · Custom CSV upload  
 > **Reinsurance**: 3-treaty layered XL (Hanover Re / Munich Re / BOC Re) for TERM cohort
 """)
 
@@ -653,6 +654,115 @@ with tab_ts:
     )
     st.plotly_chart(fig_und, use_container_width=True)
 
+    # ── Chart 5: Onerous Contract Full Lifecycle ─────────────────────────
+    st.divider()
+    st.subheader("☠️ → 🟢  Onerous Contract Lifecycle — MED_ONR_RECOVERY")
+    st.markdown("""
+This cohort demonstrates the **complete IFRS 17 onerous contract journey**
+— from Day-1 loss recognition to full recovery with CSM formation:
+""")
+
+    onr_ts = ts_df[ts_df["cohort_id"] == "MED_ONR_RECOVERY"].copy()
+    if not onr_ts.empty:
+        # Add opening period if present
+        opening_label = "Opening\n(2023Q4)"
+        onr_ts = onr_ts.sort_values("period")
+
+        # ── Phase annotation ──────────────────────────────────────────────
+        phase_map = {
+            "2024Q1": "Q1 — Deterioration<br>(extra LC recognised)",
+            "2024Q2": "Q2 — Stabilisation<br>(LC starts releasing)",
+            "2024Q3": "Q3 — Major Improvement<br>(LC collapses: 730→115)",
+            "2024Q4": "Q4 — Full Recovery<br>(LC=0, CSM=160 born 🎉)",
+        }
+
+        col_lc_csm, col_icl = st.columns([3, 2])
+
+        with col_lc_csm:
+            fig_onr = go.Figure()
+            fig_onr.add_scatter(
+                x=onr_ts["period"], y=onr_ts["eom_lc"],
+                name="LC (Loss Component)", mode="lines+markers",
+                marker=dict(size=10, color="#ef4444"),
+                line=dict(width=3, color="#ef4444"),
+                fill="tozeroy", fillcolor="rgba(239,68,68,0.15)",
+            )
+            fig_onr.add_scatter(
+                x=onr_ts["period"], y=onr_ts["eom_csm"],
+                name="CSM (born in Q4)", mode="lines+markers",
+                marker=dict(size=10, color="#22c55e", symbol="star"),
+                line=dict(width=3, color="#22c55e"),
+                fill="tozeroy", fillcolor="rgba(34,197,94,0.15)",
+            )
+            # Annotation for the recovery crossover
+            fig_onr.add_vline(x="2024Q4", line_dash="dash", line_color="#22c55e", line_width=2)
+            fig_onr.add_annotation(
+                x="2024Q4", y=max(onr_ts["eom_lc"].max(), 50) * 0.7,
+                text="<b>LC = 0<br>CSM = 160<br>✅ Profitable!</b>",
+                showarrow=True, arrowhead=2, arrowcolor="#22c55e",
+                font=dict(color="#166534", size=12),
+                bgcolor="#dcfce7", bordercolor="#22c55e",
+            )
+            fig_onr.update_layout(
+                title="LC vs CSM — Onerous Contract Lifecycle ('000 HKD)",
+                height=400, margin=dict(l=40, r=40, t=60, b=40),
+                xaxis_title="Period", yaxis_title="Balance ('000 HKD)",
+            )
+            st.plotly_chart(fig_onr, use_container_width=True)
+
+        with col_icl:
+            # Summary table with phase labels
+            summary_rows = []
+            for _, row in onr_ts.iterrows():
+                p = row["period"]
+                summary_rows.append({
+                    "Period": p,
+                    "Phase": phase_map.get(p, p),
+                    "LC": int(row["eom_lc"]),
+                    "CSM": int(row["eom_csm"]),
+                    "ICL": int(row["eom_pvfcf"] + row["eom_ra"] + row["eom_csm"] - row["eom_lc"]),
+                })
+            onr_summary = pd.DataFrame(summary_rows)
+            st.dataframe(
+                onr_summary.style
+                    .format({"LC": "{:,.0f}", "CSM": "{:,.0f}", "ICL": "{:,.0f}"})
+                    .map(lambda v: "color:#ef4444;font-weight:700" if isinstance(v, int) and v > 0 else "", subset=["LC"])
+                    .map(lambda v: "color:#16a34a;font-weight:700" if isinstance(v, int) and v > 0 else "", subset=["CSM"]),
+                use_container_width=True,
+                height=220,
+            )
+
+            # P&L waterfall for this cohort
+            st.caption("**P&L impact by quarter:**")
+            onr_pl = ts_df[ts_df["cohort_id"] == "MED_ONR_RECOVERY"][
+                ["period", "insurance_revenue", "ifie_pl"]
+            ].copy()
+            onr_pl["ISR (Revenue)"] = onr_pl["insurance_revenue"]
+            onr_pl["IFIE"] = onr_pl["ifie_pl"]
+            fig_pl_onr = go.Figure()
+            fig_pl_onr.add_bar(x=onr_pl["period"], y=onr_pl["ISR (Revenue)"],
+                               name="ISR", marker_color="#22c55e")
+            fig_pl_onr.add_bar(x=onr_pl["period"], y=onr_pl["IFIE"],
+                               name="IFIE", marker_color="#f59e0b")
+            fig_pl_onr.update_layout(
+                barmode="stack", title="P&L — by quarter",
+                height=250, margin=dict(l=20, r=20, t=40, b=30),
+                showlegend=True,
+            )
+            st.plotly_chart(fig_pl_onr, use_container_width=True)
+
+        # Key IFRS 17 notes
+        st.info("""
+**IFRS 17 Mechanics highlighted in this lifecycle:**
+- **Q1**: `lc_reversal > 0` → Dr ISE / Cr ICL-LC → LC rises (contract gets MORE onerous)
+- **Q2–Q3**: `lc_reversal < 0` → Dr ICL-LC / Cr ISR → LC releases as service is delivered  
+- **Q3**: Large assumption improvement → massive LC release (Dr ICL-LC / Cr ISR)
+- **Q4**: Final LC cleared + `assumption_chg_csm = 160` → Dr ICL-PVFCF / Cr ICL-CSM → **CSM born!**  
+  The contract has crossed from onerous to profitable. Future CSM of 160 will amortise as Insurance Revenue.
+""")
+    else:
+        st.info("MED_ONR_RECOVERY cohort not found in loaded data.")
+
     # ── Raw time series table ─────────────────────────────────────────────
     with st.expander("View raw time series data"):
         st.dataframe(
@@ -1061,8 +1171,99 @@ not in the subledger. The subledger simply reads the numbers from `actuarial_out
 and processes each RCA independently. This is the standard architecture in production.
 """)
 
-    # ── Section 7: This subledger's flow ──────────────────────────────────
-    st.markdown("### 7. This Subledger's Data Flow")
+    # ── Section 7: Onerous Contracts — Full Lifecycle ────────────────────
+    st.markdown("### 7. Onerous Contracts — The Full Lifecycle")
+    st.markdown("""
+An onerous contract arises when **PVFCF + RA > 0** at initial recognition — the group
+of contracts is expected to make a net loss.  Under IFRS 17 this loss must be recognised
+**immediately on Day 1** (no deferral).  The **Loss Component (LC)** tracks this liability.
+""")
+
+    c_onr1, c_onr2 = st.columns(2)
+    with c_onr1:
+        st.markdown("""
+<div class="concept-card">
+  <div class="concept-title">☠️ Day-1 Recognition — LC Born</div>
+  <div class="concept-body">
+  When a group is onerous at initial recognition:<br>
+  <code>LC = PVFCF + RA &gt; 0, CSM = 0</code><br><br>
+  <b>Journal entry:</b><br>
+  Dr Insurance Service Expense (ISE)<br>
+  Cr ICL — Loss Component<br><br>
+  The full expected loss is charged to P&amp;L immediately.
+  No profit margin (CSM) exists — the contract is under water.
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+    with c_onr2:
+        st.markdown("""
+<div class="concept-card">
+  <div class="concept-title">📉 Additional Loss — LC Increases</div>
+  <div class="concept-body">
+  If experience is worse than expected (e.g. adverse claims),
+  the contract becomes <i>more</i> onerous:<br>
+  <code>lc_reversal &gt; 0</code> (positive → LC rises)<br><br>
+  <b>Journal entry:</b><br>
+  Dr ISE (additional loss)<br>
+  Cr ICL — Loss Component<br><br>
+  The extra loss goes straight to P&amp;L — there is no CSM buffer.
+  This is the key asymmetry vs. profitable contracts.
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+    c_onr3, c_onr4 = st.columns(2)
+    with c_onr3:
+        st.markdown("""
+<div class="concept-card">
+  <div class="concept-title">📈 Service Delivery — LC Releases</div>
+  <div class="concept-body">
+  As insurance coverage is provided each period, the LC is
+  systematically released (like CSM amortisation for profitable contracts):<br>
+  <code>lc_reversal &lt; 0</code> (negative → LC falls)<br><br>
+  <b>Journal entry:</b><br>
+  Dr ICL — Loss Component<br>
+  Cr Insurance Revenue (ISR)<br><br>
+  This LC release is the onerous contract's equivalent of "profit emergence"
+  — even though the contract is still loss-making overall.
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+    with c_onr4:
+        st.markdown("""
+<div class="concept-card">
+  <div class="concept-title">🟢 Recovery — LC → 0, CSM Forms</div>
+  <div class="concept-body">
+  If assumptions improve sufficiently (e.g. mortality/morbidity revision):<br>
+  1. Improvement first <b>absorbs the remaining LC</b> (Dr ICL-LC / Cr ISR)<br>
+  2. Any <b>excess improvement</b> creates a NEW CSM:<br>
+  <code>assumption_chg_csm &gt; 0, lc_eom = 0</code><br><br>
+  <b>Journal entry (for excess):</b><br>
+  Dr ICL — PVFCF<br>
+  Cr ICL — CSM<br><br>
+  The contract has flipped from onerous to profitable. The new CSM
+  will amortise as Insurance Revenue in future periods.
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+    st.markdown("""
+**Demo in this app:** the `MED_ONR_RECOVERY` cohort in the 📉 Time Series tab walks through
+this exact journey:
+
+| Period | Event | LC | CSM |
+|--------|-------|----|-----|
+| 2023Q4 | Day-1 onerous recognition | **750** | 0 |
+| 2024Q1 | Bad experience → extra LC | **830** ↑ | 0 |
+| 2024Q2 | Stabilisation, regular service LC release | 730 ↓ | 0 |
+| 2024Q3 | Major assumption improvement, large LC release | 115 ↓↓ | 0 |
+| 2024Q4 | **Last LC cleared + excess → CSM born** | **0** ✅ | **160** 🟢 |
+""")
+
+    # ── Section 8: This subledger's flow ──────────────────────────────────
+    st.markdown("### 8. This Subledger's Data Flow")
     st.code("""
 Actuarial System (Prophet / MoSes)
     actuarial_output.csv
