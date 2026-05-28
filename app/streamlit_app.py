@@ -30,7 +30,8 @@ if _ROOT not in sys.path:
 from src.models.gmm import GMMModel
 from src.models.paa import PAAModel
 from src.models.vfa import VFAModel
-from src.reinsurance import compute_rca, compute_rca_treaties, load_treaties
+from src.reinsurance import compute_rca
+from src.reinsurance_xl import compute_rca_treaties, load_treaties
 from src.subledger import ChartOfAccounts, generate_journal
 from src.reconciliation import reconcile_portfolio, check_journal_balance, aoc_waterfall
 from src.analytics import build_timeseries, portfolio_timeseries

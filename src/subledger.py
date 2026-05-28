@@ -34,7 +34,7 @@ import yaml
 
 from .models.base import AOCResult
 from .reinsurance import RCASummary
-from typing import List
+from typing import List, Optional
 
 
 # ──────────────────────────────────────────────────────────────────────────────
