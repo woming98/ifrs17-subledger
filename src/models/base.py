@@ -165,8 +165,9 @@ class AOCResult:
             "⑨ Assumption Change → CSM": self.assumption_chg_csm,
             "FX Effect": self.fx_effect,
         }
-        if self.underlying_items_chg != 0.0:
-            d["VFA — Underlying Items Change → CSM"] = self.underlying_items_chg
+        _und = getattr(self, "underlying_items_chg", 0.0)
+        if _und != 0.0:
+            d["VFA — Underlying Items Change → CSM"] = _und
         d["EOM ICL (Calculated)"] = self.bom_icl + self.total_movements
         d["EOM ICL (Input)"]      = self.eom_icl
         d["Recon Diff"]           = self.reconciliation_diff

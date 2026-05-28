@@ -319,19 +319,15 @@ def generate_journal(
                       abs(aoc.fx_effect), ccy)
 
     # VFA: Underlying items change (intra-ICL PVFCF ↔ CSM)
-    if abs(aoc.underlying_items_chg) > 1e-6:
+    if abs(getattr(aoc, "underlying_items_chg", 0.0)) > 1e-6:
+        _und_chg = getattr(aoc, "underlying_items_chg", 0.0)
         label = "VFA — Underlying Items Change → CSM"
-        if aoc.underlying_items_chg > 0:
-            # Underlying items appreciated → PVFCF liability increases (Dr ICL_PVFCF)
-            # but CSM absorbs it (Cr ICL_CSM) — net ICL unchanged
+        if _und_chg > 0:
             batch.add(label, ICL_PVFCF, coa.name(ICL_PVFCF), ICL_CSM, coa.name(ICL_CSM),
-                      aoc.underlying_items_chg, ccy,
-                      "Underlying items gain absorbed by CSM")
+                      _und_chg, ccy, "Underlying items gain absorbed by CSM")
         else:
-            # Market correction → CSM decreases (Dr ICL_CSM / Cr ICL_PVFCF)
             batch.add(label, ICL_CSM, coa.name(ICL_CSM), ICL_PVFCF, coa.name(ICL_PVFCF),
-                      abs(aoc.underlying_items_chg), ccy,
-                      "Underlying items loss charged to CSM")
+                      abs(_und_chg), ccy, "Underlying items loss charged to CSM")
 
     # ====================================================================
     # 再保险 RCA 分录（若有分出）

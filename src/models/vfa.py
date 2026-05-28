@@ -117,6 +117,9 @@ class VFAModel(MeasurementModel):
         cession_rate       = float(eom_row.get("cession_rate",       0.0))
 
         # ── 5. Assemble AOCResult ─────────────────────────────────────────
+        # NOTE: underlying_items_chg is set AFTER construction via setattr
+        # to maintain backward compatibility with cached versions of base.py
+        # that may not yet have this field defined in the dataclass.
         result = AOCResult(
             cohort_id=cohort_id,
             product=product,
@@ -142,8 +145,9 @@ class VFAModel(MeasurementModel):
             eom_csm=eom_csm,
             eom_lc=eom_lc,
             cession_rate=cession_rate,
-            underlying_items_chg=underlying_items_chg,
         )
+        # Set VFA-specific field as plain attribute (works even without the dataclass field)
+        result.underlying_items_chg = underlying_items_chg
 
         self._reconcile(result)
         return result

@@ -44,7 +44,7 @@ def build_timeseries(all_results: dict) -> pd.DataFrame:
                 "insurance_service_expense": round(a.insurance_service_expense, 2),
                 "net_insurance_result":      round(a.net_insurance_result, 2),
                 "ifie_pl":                   round(a.ifie_pl, 2),
-                "underlying_items_chg":      round(a.underlying_items_chg, 2),
+                "underlying_items_chg":      round(getattr(a, "underlying_items_chg", 0.0), 2),
             })
     return pd.DataFrame(rows)
 
