@@ -32,10 +32,8 @@ from src.models.paa import PAAModel
 from src.models.vfa import VFAModel
 from src.reinsurance import compute_rca
 from src.subledger import ChartOfAccounts, generate_journal
-from src.reconciliation import (
-    reconcile_portfolio, check_journal_balance, aoc_waterfall,
-    build_timeseries, portfolio_timeseries,
-)
+from src.reconciliation import reconcile_portfolio, check_journal_balance, aoc_waterfall
+from src.analytics import build_timeseries, portfolio_timeseries
 from src.report import pl_summary, bs_summary, aoc_detail, gl_detail, trial_balance
 
 # ──────────────────────────────────────────────────────────────────────────────
