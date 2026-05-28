@@ -28,7 +28,7 @@ Actuarial System Output (Prophet / MoSes)
     │  GMM · PAA · VFA   →  AOCResult (9-item breakdown)   │
     │  Onerous Contracts →  Loss Component (LC) lifecycle  │
     │  Quota Share RCA   →  Reinsurance Contract Asset     │
-    │  Layered XL + LEV  →  Multi-reinsurer cession rates  │
+    │  Layered XL        →  Pre-computed effective rates    │
     └──────────────────────────────────────────────────────┘
                │
                ▼
@@ -72,8 +72,9 @@ Actuarial System Output (Prophet / MoSes)
 
 ### Reinsurance
 - **Quota Share** — proportional cession at cohort-level; full RCA AOC mirror
-- **Layered Excess-of-Loss** — multi-layer, multi-reinsurer structure (Hanover Re / Munich Re / BOC Re)
-- **LEV (Limited Expected Value)** — log-normal layer pricing formula for each XL layer
+- **Layered Excess-of-Loss** — 2-layer structure (Hanover Re / Munich Re / BOC Re) with pre-computed effective cession rates
+  - Under total-loss assumption (term/life products): `effective_rate = layer_size × cession_rate / sum_insured`
+  - Each reinsurer gets an independent RCA (separate legal entity under IFRS 17 §60)
 
 ### Onerous Contract Full Lifecycle ☠️ → 🟢
 Demo cohort `MED_ONR_RECOVERY` walks through every IFRS 17 onerous contract event:
@@ -150,7 +151,7 @@ dair, cession_rate, period_fraction
 
 | Cohort | Product | Model | Reinsurance | Special Feature |
 |--------|---------|-------|-------------|-----------------|
-| `TERM_GMM_2022` | Term Non-Par 5Y | GMM | Layered XL (Hanover/MR/BOC) | 2-layer XL with LEV |
+| `TERM_GMM_2022` | Term Non-Par 5Y | GMM | Layered XL (Hanover/MR/BOC) | Hanover 12% · MR 8% · BOC 32% (total-loss) |
 | `MED_GMM_2021` | Medical Non-Par LT | GMM | QS 20% Munich Re | Adverse experience |
 | `MED_GMM_ONR` | Medical Non-Par LT | GMM | None | Persistently onerous |
 | **`MED_ONR_RECOVERY`** | Medical Non-Par LT | GMM | None | **Full onerous → profitable lifecycle** |
@@ -167,7 +168,7 @@ dair, cession_rate, period_fraction
 ifrs17-subledger/
 ├── config/
 │   ├── chart_of_accounts.yaml     ← IFRS 17 GL account codes (customisable)
-│   └── reinsurance_treaties.yaml  ← Layered XL treaty definitions (LEV parameters)
+│   └── reinsurance_treaties.yaml  ← Treaty definitions with pre-computed effective rates
 │
 ├── data/
 │   ├── generate_multi_period.py   ← Demo data generator (8 cohorts × 5 periods)
@@ -180,7 +181,7 @@ ifrs17-subledger/
 │   │   ├── paa.py                 ← PAA AOC engine
 │   │   └── vfa.py                 ← VFA AOC engine (underlying items, intra-ICL)
 │   ├── reinsurance.py             ← Quota Share RCA (backward-compatible)
-│   ├── reinsurance_xl.py          ← Layered XL + LEV functions (lognormal)
+│   ├── reinsurance_xl.py          ← Layered XL engine (proportional effective-rate approach)
 │   ├── subledger.py               ← GL journal entry generator
 │   ├── reconciliation.py          ← BOM+Movements=EOM checker + waterfall builder
 │   ├── analytics.py               ← Multi-period time series aggregation
@@ -217,13 +218,23 @@ Under the OCI option (GMM cohorts), the interest rate sensitivity of the ICL is
 routed to **Other Comprehensive Income** rather than P&L. The app tracks the
 cumulative OCI Reserve and estimates its response to yield curve shocks.
 
-### Layered XL & LEV
-```
-E[Layer_{[a,b]}] = E[X∧b] − E[X∧a]
+### Layered XL — Effective Cession Rates (Total-Loss Assumption)
+For life products (term / whole life) where claims are binary (full benefit or zero),
+the effective cession rate per reinsurer is calculated algebraically upfront:
 
-For LogNormal(μ, σ):
-E[X∧d] = e^(μ+σ²/2) · Φ((ln d − μ − σ²)/σ) + d·[1 − Φ((ln d − μ)/σ)]
 ```
+effective_rate = layer_size × cession_rate / sum_insured
+
+Example — TERM_GMM_2022 (sum insured = HKD 500k):
+  Layer 1 (0–300k): Hanover Re 20%  → 300k × 20% / 500k = 12%
+  Layer 2 (300–600k): Munich Re 20% → 200k × 20% / 500k =  8%
+  Layer 2 (300–600k): BOC Re 80%    → 200k × 80% / 500k = 32%
+  Retention                         → 300k × 80% / 500k = 48%
+  Total                                                  = 100% ✓
+```
+
+In production, actuarial systems (Prophet/MoSes) output PVFCF per reinsurer directly.
+The subledger reads these numbers and treats each reinsurer as a proportional (QS-style) RCA.
 
 ### IFRS 17 Disclosure Notes (Tab 📋)
 Generates all 6 standard disclosure tables required by IFRS 17.97–132:
@@ -245,8 +256,7 @@ Generates all 6 standard disclosure tables required by IFRS 17.97–132:
 | Web UI | `Streamlit` |
 | Interactive charts | `Plotly` |
 | Config | `PyYAML` |
-| Statistics (LEV) | `scipy.stats` |
-| Export | `openpyxl` |
+| Excel export | `openpyxl` (formatted: colour headers, bold totals, number format) |
 | Deployment | Streamlit Community Cloud |
 
 ---
@@ -262,4 +272,4 @@ finance subledgers that generate compliant GL entries and regulatory disclosures
 
 ## License
 
-MIT © 2024
+MIT © 2025
