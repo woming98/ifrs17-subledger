@@ -5,8 +5,6 @@ AOCResult 储存一个 cohort 一个期间的完整变动分析（Analysis of Ch
 MeasurementModel 是 GMM / PAA / VFA 的抽象父类。
 """
 
-from __future__ import annotations
-
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional
@@ -83,7 +81,7 @@ class AOCResult:
     cession_rate: float = 0.0
     rca_bom: float = 0.0            # 期初再保合同资产 ICL
     rca_eom: float = 0.0            # 期末再保合同资产 ICL
-    rca_aoc: "AOCResult | None" = field(default=None, repr=False)
+    rca_aoc: Optional["AOCResult"] = field(default=None, repr=False)
 
     # ── 衍生属性 ─────────────────────────────────────────────────────────────
 
