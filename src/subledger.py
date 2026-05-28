@@ -199,28 +199,25 @@ def generate_journal(
     # 直接业务分录
     # ====================================================================
 
-    # ① 新业务首次确认
+    # ① New Business — Initial Recognition
     if abs(aoc.new_business) > 1e-6:
-        label = "① 新业务首次确认"
+        label = "① New Business — Initial Recognition"
         nb = aoc.new_business
         if nb > 0:
-            # 增加负债：Dr Retained Earnings / Cr ICL
-            # (GMM 新业务 CSM ≥ 0，无 day-1 P&L)
             batch.add(label, RETAINED, coa.name(RETAINED), ICL_PVFCF, coa.name(ICL_PVFCF), abs(nb), ccy,
-                      "新业务 PVFCF + RA + CSM 整体净额入账")
+                      "New business: net PVFCF + RA + CSM recognised on Day 1")
         else:
             batch.add(label, ICL_PVFCF, coa.name(ICL_PVFCF), RETAINED, coa.name(RETAINED), abs(nb), ccy)
 
-    # ② 预期现金流释放（含 RA release）→ Insurance Revenue
+    # ② Expected CF Release (incl. RA release) → Insurance Revenue
     if abs(aoc.expected_cf_release) > 1e-6:
-        label = "② 预期现金流释放（含 RA release）"
-        # exp_cf_release 为负数 = 减少负债 = Revenue
+        label = "② Expected CF Release (incl. RA release)"
         batch.add(
             label,
             ICL_PVFCF, coa.name(ICL_PVFCF),
             ISR,        coa.name(ISR),
             abs(aoc.expected_cf_release), ccy,
-            "释放预期现金流至保险收入",
+            "Expected CF release recognised as Insurance Revenue",
         ) if aoc.expected_cf_release < 0 else batch.add(
             label,
             ISE, coa.name(ISE),
@@ -228,28 +225,25 @@ def generate_journal(
             abs(aoc.expected_cf_release), ccy,
         )
 
-    # ③ 经验差异 → Insurance Service Expense
+    # ③ Experience Variance → Insurance Service Expense
     if abs(aoc.experience_variance) > 1e-6:
-        label = "③ 经验差异（实际 vs 预期）"
+        label = "③ Experience Variance (Actual vs Expected)"
         if aoc.experience_variance > 0:
-            # 实际更差（实际理赔 > 预期）：Dr ISE / Cr ICL
             batch.add(label, ISE, coa.name(ISE), ICL_PVFCF, coa.name(ICL_PVFCF),
-                      aoc.experience_variance, ccy, "实际现金流超出预期")
+                      aoc.experience_variance, ccy, "Actual claims exceeded expectations")
         else:
-            # 实际更好：Dr ICL / Cr ISE（负向费用）
             batch.add(label, ICL_PVFCF, coa.name(ICL_PVFCF), ISE, coa.name(ISE),
-                      abs(aoc.experience_variance), ccy, "实际现金流优于预期")
+                      abs(aoc.experience_variance), ccy, "Actual claims better than expected")
 
-    # ④ CSM 摊销 → Insurance Revenue
+    # ④ CSM Amortisation → Insurance Revenue
     if abs(aoc.csm_amortisation) > 1e-6:
-        label = "④ CSM 摊销"
-        # csm_amortisation 为负数 = 减少 CSM = Revenue
+        label = "④ CSM Amortisation"
         batch.add(
             label,
             ICL_CSM, coa.name(ICL_CSM),
             ISR,      coa.name(ISR),
             abs(aoc.csm_amortisation), ccy,
-            "按覆盖单位摊销 CSM 至保险收入",
+            "CSM amortised to Insurance Revenue based on coverage units",
         ) if aoc.csm_amortisation < 0 else batch.add(
             label,
             ISE, coa.name(ISE),
@@ -257,60 +251,55 @@ def generate_journal(
             abs(aoc.csm_amortisation), ccy,
         )
 
-    # ⑤ 亏损合同 LC 回转
+    # ⑤ LC Reversal / Additional LC (Onerous Contract)
     if abs(aoc.lc_reversal) > 1e-6:
-        label = "⑤ 亏损合同 LC 回转"
+        label = "⑤ LC Reversal / Additional LC (Onerous)"
         if aoc.lc_reversal < 0:
-            # LC 减少（回转）→ Dr ICL_LC / Cr ISR
             batch.add(label, ICL_LC, coa.name(ICL_LC), ISR, coa.name(ISR),
-                      abs(aoc.lc_reversal), ccy, "随服务期释放亏损部分")
+                      abs(aoc.lc_reversal), ccy, "Loss Component reversed as service is delivered")
         else:
-            # LC 增加（onerous 首次 / 追加）→ Dr ISE / Cr ICL_LC
             batch.add(label, ISE, coa.name(ISE), ICL_LC, coa.name(ICL_LC),
-                      aoc.lc_reversal, ccy, "合同变为亏损，确认损失")
+                      aoc.lc_reversal, ccy, "Contract became onerous — Loss Component recognised")
 
-    # ⑥ IFIE — P&L（DAIR 展开折现）
+    # ⑥ IFIE — P&L (discount unwinding at locked-in DAIR)
     if abs(aoc.finance_charge_pl) > 1e-6:
-        label = "⑥ IFIE — P&L（DAIR 展开折现）"
+        label = "⑥ IFIE — P&L (DAIR unwind)"
         if aoc.finance_charge_pl > 0:
-            # 折现展开增加负债：Dr IFIE_PL / Cr ICL
             batch.add(label, IFIE_PL, coa.name(IFIE_PL), ICL_PVFCF, coa.name(ICL_PVFCF),
-                      aoc.finance_charge_pl, ccy, "以 DAIR 展开折现（P&L）")
+                      aoc.finance_charge_pl, ccy, "Discount unwinding at DAIR (P&L)")
         else:
             batch.add(label, ICL_PVFCF, coa.name(ICL_PVFCF), IFIE_PL, coa.name(IFIE_PL),
                       abs(aoc.finance_charge_pl), ccy)
 
-    # ⑦ IFIE — OCI（利率变动，走 OCI）
+    # ⑦ IFIE — OCI (current rate vs DAIR difference)
     if abs(aoc.finance_charge_oci) > 1e-6:
-        label = "⑦ IFIE — OCI（当前利率 vs DAIR）"
+        label = "⑦ IFIE — OCI (current rate vs DAIR)"
         if aoc.finance_charge_oci > 0:
             batch.add(label, OCI, coa.name(OCI), ICL_PVFCF, coa.name(ICL_PVFCF),
-                      aoc.finance_charge_oci, ccy, "利率下降，PVFCF 增加 → OCI")
+                      aoc.finance_charge_oci, ccy, "Rates fell — PVFCF increased, routed to OCI")
         else:
             batch.add(label, ICL_PVFCF, coa.name(ICL_PVFCF), OCI, coa.name(OCI),
-                      abs(aoc.finance_charge_oci), ccy, "利率上升，PVFCF 减少 → OCI")
+                      abs(aoc.finance_charge_oci), ccy, "Rates rose — PVFCF decreased, routed to OCI")
 
-    # ⑧ 假设变更 → P&L
+    # ⑧ Assumption Changes → P&L
     if abs(aoc.assumption_chg_pl) > 1e-6:
-        label = "⑧ 假设变更 → P&L"
+        label = "⑧ Assumption Changes → P&L"
         if aoc.assumption_chg_pl > 0:
             batch.add(label, ISE, coa.name(ISE), ICL_PVFCF, coa.name(ICL_PVFCF),
-                      aoc.assumption_chg_pl, ccy, "假设恶化 → ISE")
+                      aoc.assumption_chg_pl, ccy, "Adverse assumption change → ISE")
         else:
             batch.add(label, ICL_PVFCF, coa.name(ICL_PVFCF), ISE, coa.name(ISE),
-                      abs(aoc.assumption_chg_pl), ccy, "假设改善 → ISE（负）")
+                      abs(aoc.assumption_chg_pl), ccy, "Favourable assumption change → ISE (negative)")
 
-    # ⑨ 假设变更 → CSM（profitable，调整 CSM 而非 P&L）
+    # ⑨ Assumption Changes → CSM (profitable contract; absorbed by CSM not P&L)
     if abs(aoc.assumption_chg_csm) > 1e-6:
-        label = "⑨ 假设变更 → CSM"
+        label = "⑨ Assumption Changes → CSM"
         if aoc.assumption_chg_csm > 0:
-            # CSM 增加（有利变更吸收）：Dr ICL_PVFCF / Cr ICL_CSM
             batch.add(label, ICL_PVFCF, coa.name(ICL_PVFCF), ICL_CSM, coa.name(ICL_CSM),
-                      aoc.assumption_chg_csm, ccy, "非经济假设改善，CSM 吸收有利变更")
+                      aoc.assumption_chg_csm, ccy, "Favourable non-economic change absorbed by CSM")
         else:
-            # CSM 减少（不利变更先抵扣 CSM）：Dr ICL_CSM / Cr ICL_PVFCF
             batch.add(label, ICL_CSM, coa.name(ICL_CSM), ICL_PVFCF, coa.name(ICL_PVFCF),
-                      abs(aoc.assumption_chg_csm), ccy, "非经济假设恶化，CSM 先行吸收")
+                      abs(aoc.assumption_chg_csm), ccy, "Adverse non-economic change reduces CSM first")
 
     # FX 汇率影响
     if abs(aoc.fx_effect) > 1e-6:
@@ -375,42 +364,42 @@ def _add_rca_entries(
         if abs(amount) > 1e-6:
             batch.add(f"[RCA {ri_tag}] {label}", dr_code, dr_name, cr_code, cr_name, abs(amount), ccy)
 
-    # ① 新业务
+    # ① New Business
     nb = rca.rca_new_business
     if abs(nb) > 1e-6:
-        if nb < 0:   # RCA 资产增加（再保承担分出保费）
-            rca_add("新业务", RCA_PVFCF, coa.name(RCA_PVFCF), RETAINED, coa.name(RETAINED), abs(nb))
+        if nb < 0:
+            rca_add("New Business", RCA_PVFCF, coa.name(RCA_PVFCF), RETAINED, coa.name(RETAINED), abs(nb))
         else:
-            rca_add("新业务", RETAINED, coa.name(RETAINED), RCA_PVFCF, coa.name(RCA_PVFCF), nb)
+            rca_add("New Business", RETAINED, coa.name(RETAINED), RCA_PVFCF, coa.name(RCA_PVFCF), nb)
 
-    # ② 预期现金流释放
+    # ② Expected CF Release
     ecf = rca.rca_expected_cf_release
     if abs(ecf) > 1e-6:
-        if ecf > 0:   # RCA 资产减少（分出部分的预期赔付释放）→ Dr ISR（负） / Cr RCA
-            rca_add("预期现金流释放", ISR, coa.name(ISR), RCA_PVFCF, coa.name(RCA_PVFCF), ecf)
+        if ecf > 0:
+            rca_add("Expected CF Release", ISR, coa.name(ISR), RCA_PVFCF, coa.name(RCA_PVFCF), ecf)
         else:
-            rca_add("预期现金流释放", RCA_PVFCF, coa.name(RCA_PVFCF), ISR, coa.name(ISR), abs(ecf))
+            rca_add("Expected CF Release", RCA_PVFCF, coa.name(RCA_PVFCF), ISR, coa.name(ISR), abs(ecf))
 
-    # ③ 经验差异
+    # ③ Experience Variance
     ev = rca.rca_experience_variance
     if abs(ev) > 1e-6:
-        if ev < 0:    # 分出实际好于预期 → 再保分入受益 → Dr RCA / Cr ISE
-            rca_add("经验差异", RCA_PVFCF, coa.name(RCA_PVFCF), ISE, coa.name(ISE), abs(ev))
+        if ev < 0:
+            rca_add("Experience Variance", RCA_PVFCF, coa.name(RCA_PVFCF), ISE, coa.name(ISE), abs(ev))
         else:
-            rca_add("经验差异", ISE, coa.name(ISE), RCA_PVFCF, coa.name(RCA_PVFCF), ev)
+            rca_add("Experience Variance", ISE, coa.name(ISE), RCA_PVFCF, coa.name(RCA_PVFCF), ev)
 
-    # ④ CSM 摊销
+    # ④ CSM Amortisation
     ca = rca.rca_csm_amortisation
     if abs(ca) > 1e-6:
         if ca > 0:
-            rca_add("CSM 摊销", ISR, coa.name(ISR), RCA_CSM, coa.name(RCA_CSM), ca)
+            rca_add("CSM Amortisation", ISR, coa.name(ISR), RCA_CSM, coa.name(RCA_CSM), ca)
         else:
-            rca_add("CSM 摊销", RCA_CSM, coa.name(RCA_CSM), ISR, coa.name(ISR), abs(ca))
+            rca_add("CSM Amortisation", RCA_CSM, coa.name(RCA_CSM), ISR, coa.name(ISR), abs(ca))
 
     # ⑥ IFIE P&L
     ip = rca.rca_finance_charge_pl
     if abs(ip) > 1e-6:
-        if ip < 0:    # RCA 端 IFIE 是收入
+        if ip < 0:
             rca_add("IFIE P&L", RCA_PVFCF, coa.name(RCA_PVFCF), IFIE_PL, coa.name(IFIE_PL), abs(ip))
         else:
             rca_add("IFIE P&L", IFIE_PL, coa.name(IFIE_PL), RCA_PVFCF, coa.name(RCA_PVFCF), ip)
