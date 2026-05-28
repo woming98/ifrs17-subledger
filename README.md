@@ -1,178 +1,265 @@
-# IFRS 17 Subledger Demo
+# IFRS 17 Subledger — Full Process Demo
 
-> **从精算输出到 GL 分录的完整 IFRS 17 流程演示**  
-> 覆盖 GMM（Building Block Approach）+ PAA，含 Quota Share 再保险 RCA，全程可视化。
+> **From actuarial output to GL entries — the complete IFRS 17 workflow, fully automated and visualised.**
 
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
-[![Streamlit](https://img.shields.io/badge/Streamlit-1.35%2B-red)](https://streamlit.io/)
-[![IFRS 17](https://img.shields.io/badge/Standard-IFRS%2017-green)](https://www.ifrs.org/issued-standards/list-of-standards/ifrs-17-insurance-contracts/)
-
----
-
-## 功能概览
-
-| 模块 | 说明 |
-|------|------|
-| **GMM AOC 引擎** | 9 项变动分析：新业务 · 预期现金流释放 · 经验差异 · CSM 摊销 · LC 回转 · IFIE(P&L/OCI) · 假设变更 · FX |
-| **PAA AOC 引擎** | 简化 AOC：未赚保费 · 赚取保费 · IACF 摊销 · 经验差异 |
-| **Quota Share RCA** | 分出比例再保险合同资产，与直接业务 AOC 联动 |
-| **GL 分录生成** | 完整借贷分录，科目来自可配置的 `chart_of_accounts.yaml` |
-| **对账检验** | BOM + 变动 = EOM 自动验证；GL 借贷平衡检验 |
-| **Streamlit 界面** | 瀑布图 · P&L 拆解 · BS 堆叠图 · 科目筛选 · Excel 导出 |
+[![Live Demo](https://img.shields.io/badge/🚀_Live_Demo-Streamlit_Cloud-FF4B4B?style=for-the-badge)](https://ifrs17-subledger.streamlit.app/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat&logo=python)](https://www.python.org/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.35%2B-FF4B4B?style=flat&logo=streamlit)](https://streamlit.io/)
+[![IFRS 17](https://img.shields.io/badge/Standard-IFRS%2017-004B87?style=flat)](https://www.ifrs.org/issued-standards/list-of-standards/ifrs-17-insurance-contracts/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat)](LICENSE)
 
 ---
 
-## 快速开始
+## What Is This?
 
-### 1. 安装依赖
+A production-style **IFRS 17 subledger engine** that reads actuarial model output (Prophet / MoSes style CSVs)
+and produces a complete set of IFRS 17 outputs — all wired together and deployable as an interactive web app.
+
+This project demonstrates the **full IFRS 17 data pipeline** that actuarial and finance teams implement at
+insurance companies, covering every major concept from the standard:
+
+```
+Actuarial System Output (Prophet / MoSes)
+        actuarial_output.csv
+               │
+               ▼
+    IFRS 17 AOC Engine
+    ┌──────────────────────────────────────────────────────┐
+    │  GMM · PAA · VFA   →  AOCResult (9-item breakdown)   │
+    │  Onerous Contracts →  Loss Component (LC) lifecycle  │
+    │  Quota Share RCA   →  Reinsurance Contract Asset     │
+    │  Layered XL + LEV  →  Multi-reinsurer cession rates  │
+    └──────────────────────────────────────────────────────┘
+               │
+               ▼
+    GL Journal Entry Generator
+    ┌─────────────────────────────────────────────┐
+    │  Double-entry bookkeeping  (DR = CR check)  │
+    │  Chart of accounts from YAML config         │
+    └─────────────────────────────────────────────┘
+               │
+               ▼
+    Reports & Visualisation
+    ┌─────────────────────────────────────────────────────────┐
+    │  Executive Dashboard · AOC Waterfall · P&L · BS · GL   │
+    │  Disclosure Notes (IFRS 17.97-132) · Sensitivity       │
+    │  CSM Run-off Glide Path · OCI Reserve Accumulation     │
+    │  Onerous Contract Lifecycle · Time Series Trends       │
+    └─────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Features
+
+### Measurement Models
+| Model | Products | Key Feature |
+|-------|----------|-------------|
+| **GMM** (General Measurement Model) | Term Non-Par, Medical Non-Par LT | Full 9-item AOC, CSM buffer, OCI option |
+| **PAA** (Premium Allocation Approach) | Medical ST, Rider Non-Par | Simplified UPR-based, IACF amortisation |
+| **VFA** (Variable Fee Approach) | Whole Life Par, Endowment Par | CSM linked to underlying items (fund performance) |
+
+### Analysis of Change (AOC) — 9 Items
+1. New Business (Day-1 recognition)
+2. Expected Cash Flow Release (incl. RA release) → **Insurance Revenue**
+3. Experience Variance → **Insurance Service Expense**
+4. CSM Amortisation → **Insurance Revenue**
+5. LC Reversal / Additional LC → **ISR / ISE**
+6. IFIE — P&L (locked-in DAIR unwind)
+7. IFIE — OCI (current rate vs DAIR, under OCI option)
+8. Assumption Changes → P&L
+9. Assumption Changes → CSM *(intra-ICL transfer)*
+
+### Reinsurance
+- **Quota Share** — proportional cession at cohort-level; full RCA AOC mirror
+- **Layered Excess-of-Loss** — multi-layer, multi-reinsurer structure (Hanover Re / Munich Re / BOC Re)
+- **LEV (Limited Expected Value)** — log-normal layer pricing formula for each XL layer
+
+### Onerous Contract Full Lifecycle ☠️ → 🟢
+Demo cohort `MED_ONR_RECOVERY` walks through every IFRS 17 onerous contract event:
+| Period | Event | LC | CSM |
+|--------|-------|----|-----|
+| 2023Q4 | Day-1 onerous — LC born | 750 | 0 |
+| 2024Q1 | Bad experience — LC worsens | 830 ↑ | 0 |
+| 2024Q2 | Stabilisation, service delivery release | 730 ↓ | 0 |
+| 2024Q3 | Major assumption improvement | 115 ↓↓ | 0 |
+| 2024Q4 | **LC = 0, CSM = 160 born** ✅ | 0 | 160 |
+
+### Web Interface — 11 Tabs
+
+| Tab | Content |
+|-----|---------|
+| 🏠 **Dashboard** | KPI cards · CSM Bridge waterfall · P&L waterfall · Cohort snapshot · Sparklines · Onerous highlight |
+| 📈 **AOC Waterfall** | Interactive waterfall by cohort and period |
+| 💹 **P&L Summary** | ISR / ISE / IFIE breakdown with charts |
+| 🏦 **Balance Sheet** | ICL component stack (PVFCF / RA / CSM / LC) + RCA detail by reinsurer |
+| 📒 **GL Entries** | Full double-entry journal, searchable by account |
+| ⚖️ **Trial Balance** | Aggregated debit / credit totals |
+| ✅ **Reconciliation** | BOM + Movements = EOM check per cohort |
+| 📉 **Time Series** | Multi-quarter trends · CSM Glide Path · OCI Reserve accumulation |
+| 🎯 **Sensitivity** | Tornado chart · Rate / mortality / expense shocks · Per-cohort breakdown |
+| 📋 **Disclosures** | 6 IFRS 17 Notes (ICL rollforward · Revenue · IFIE · RCA · Maturity) + Excel download |
+| 📖 **How It Works** | Plain-English explainer: GMM/PAA/VFA · AOC · OCI option · Reinsurance · Onerous lifecycle · Transition methods |
+
+---
+
+## Quick Start
+
+### Option A — Live Web App (no install required)
+
+**[→ Open ifrs17-subledger.streamlit.app](https://ifrs17-subledger.streamlit.app/)**
+
+Click **▶ Run Subledger** in the sidebar to load the demo portfolio (8 cohorts × 5 periods).
+
+### Option B — Run Locally
 
 ```bash
+# 1. Clone
+git clone https://github.com/woming98/ifrs17-subledger.git
+cd ifrs17-subledger
+
+# 2. Install
 pip install -r requirements.txt
-```
 
-### 2. 生成 Demo 数据
+# 3. (Optional) Regenerate demo data
+python data/generate_multi_period.py
 
-```bash
-python data/generate_demo.py
-```
-
-生成 5 个 cohort（2024Q4 期间）：
-- `TERM_GMM_2022Q4`：Term Non-Par 5年期（GMM, profitable, QS 30%）
-- `MED_GMM_2021Q4`：长期 Medical Non-Par（GMM, profitable, QS 20%）
-- `MED_GMM_ONEROUS_2020Q4`：长期 Medical Non-Par（GMM, **onerous**）
-- `MED_PAA_2024Q3`：短期 Medical Non-Par（PAA, QS 25%）
-- `RIDER_PAA_2024Q3`：短期 Rider Non-Par（PAA）
-
-### 3. 命令行运行
-
-```bash
-python examples/run_subledger.py
-```
-
-输出：`output/subledger_output.xlsx`（含 P&L / BS / AOC / GL / 试算平衡 5 个 Sheet）
-
-### 4. 启动 Streamlit 可视化界面
-
-```bash
+# 4. Launch
 streamlit run app/streamlit_app.py
 ```
 
+### Option C — Use Your Own Actuarial Data
+
+Upload your own `actuarial_output.csv` via the **Custom CSV Upload** sidebar widget.
+Required columns (minimum):
+
+```
+cohort_id, product, measurement_model, period, currency,
+pvfcf_eom, ra_eom, csm_eom, lc_eom,
+exp_cf_release, experience_var, csm_amortisation, lc_reversal,
+finance_charge_pl, finance_charge_oci,
+assumption_chg_pl, assumption_chg_csm,
+dair, cession_rate, period_fraction
+```
+
 ---
 
-## 项目结构
+## Demo Portfolio
+
+8 cohorts covering all three measurement models and multiple reinsurance structures:
+
+| Cohort | Product | Model | Reinsurance | Special Feature |
+|--------|---------|-------|-------------|-----------------|
+| `TERM_GMM_2022` | Term Non-Par 5Y | GMM | Layered XL (Hanover/MR/BOC) | 2-layer XL with LEV |
+| `MED_GMM_2021` | Medical Non-Par LT | GMM | QS 20% Munich Re | Adverse experience |
+| `MED_GMM_ONR` | Medical Non-Par LT | GMM | None | Persistently onerous |
+| **`MED_ONR_RECOVERY`** | Medical Non-Par LT | GMM | None | **Full onerous → profitable lifecycle** |
+| `MED_PAA` | Medical Non-Par ST | PAA | QS 25% Hannover | Short-term PAA |
+| `RIDER_PAA` | Rider Non-Par | PAA | None | No reinsurance |
+| `WL_VFA_2019` | Whole Life Par | VFA | QS 20% Swiss Re | Market-driven CSM volatility |
+| `ENDO_VFA_2022` | Endowment Par 20Y | VFA | None | Long-duration VFA |
+
+---
+
+## Project Structure
 
 ```
 ifrs17-subledger/
 ├── config/
-│   └── chart_of_accounts.yaml     ← IFRS 17 标准科目表（可自定义）
+│   ├── chart_of_accounts.yaml     ← IFRS 17 GL account codes (customisable)
+│   └── reinsurance_treaties.yaml  ← Layered XL treaty definitions (LEV parameters)
+│
 ├── data/
-│   ├── generate_demo.py            ← Demo 数据生成脚本
-│   ├── prior_period.csv            ← 期初余额（BOM）
-│   └── current_period.csv          ← 期末余额（EOM）+ AOC 分项
+│   ├── generate_multi_period.py   ← Demo data generator (8 cohorts × 5 periods)
+│   └── actuarial_output.csv       ← Pre-generated demo data (40 rows)
+│
 ├── src/
 │   ├── models/
-│   │   ├── base.py                 ← AOCResult 数据类 + 抽象基类
-│   │   ├── gmm.py                  ← GMM AOC 引擎（9 项分解）
-│   │   └── paa.py                  ← PAA AOC 引擎
-│   ├── reinsurance.py              ← Quota Share RCA 计算
-│   ├── subledger.py                ← GL 分录生成器
-│   ├── reconciliation.py           ← 对账检验 + 瀑布汇总
-│   └── report.py                   ← P&L / BS / Excel 导出
-├── examples/
-│   └── run_subledger.py            ← 命令行入口
+│   │   ├── base.py                ← AOCResult dataclass + abstract MeasurementModel
+│   │   ├── gmm.py                 ← GMM AOC engine (9-item decomposition)
+│   │   ├── paa.py                 ← PAA AOC engine
+│   │   └── vfa.py                 ← VFA AOC engine (underlying items, intra-ICL)
+│   ├── reinsurance.py             ← Quota Share RCA (backward-compatible)
+│   ├── reinsurance_xl.py          ← Layered XL + LEV functions (lognormal)
+│   ├── subledger.py               ← GL journal entry generator
+│   ├── reconciliation.py          ← BOM+Movements=EOM checker + waterfall builder
+│   ├── analytics.py               ← Multi-period time series aggregation
+│   ├── disclosures.py             ← IFRS 17 Note disclosures (Notes 1–6)
+│   └── report.py                  ← P&L / BS / Excel export
+│
 ├── app/
-│   └── streamlit_app.py            ← Streamlit 可视化界面
+│   └── streamlit_app.py           ← Streamlit web interface (11 tabs)
+│
+├── examples/
+│   └── run_subledger.py           ← CLI entry point
+│
 └── requirements.txt
 ```
 
 ---
 
-## 输入数据格式
+## Key IFRS 17 Concepts Demonstrated
 
-### `prior_period.csv`（期初余额）
+### ICL Measurement Formula
+```
+ICL (profitable) = PVFCF + RA + CSM
+ICL (onerous)    = PVFCF + RA − LC      (CSM = 0)
+Net ICL          = Gross ICL − RCA
+```
 
-| 字段 | 说明 |
-|------|------|
-| `cohort_id` | 合同组唯一标识 |
-| `product` | 产品名称 |
-| `measurement_model` | `GMM` 或 `PAA` |
-| `period` | 期间（如 `2024Q3`） |
-| `pvfcf_eom` | 期末 PVFCF（即为下期 BOM） |
-| `ra_eom` | 期末 RA |
-| `csm_eom` | 期末 CSM（PAA 为 0） |
-| `lc_eom` | 期末 LC（亏损部分） |
+### CSM Run-off Glide Path
+The **Time Series** tab projects the CSM balance forward 12 quarters based on the
+historical amortisation rate, with ±25% scenario bands. This answers:
+*"How many years of profit are still locked in the book?"*
 
-### `current_period.csv`（期末余额 + AOC 分项）
+### OCI Reserve Mechanics
+Under the OCI option (GMM cohorts), the interest rate sensitivity of the ICL is
+routed to **Other Comprehensive Income** rather than P&L. The app tracks the
+cumulative OCI Reserve and estimates its response to yield curve shocks.
 
-在期初格式基础上增加：
+### Layered XL & LEV
+```
+E[Layer_{[a,b]}] = E[X∧b] − E[X∧a]
 
-| 字段 | 说明 |
-|------|------|
-| `exp_cf_release` | 预期现金流释放（负数 = 减少负债） |
-| `experience_var` | 经验差异（正数 = 实际更差） |
-| `csm_amortisation` | CSM 摊销（负数） |
-| `lc_reversal` | LC 回转（负数 = 减少亏损） |
-| `finance_charge_pl` | IFIE P&L 部分（DAIR × BOM_ICL × dt） |
-| `finance_charge_oci` | IFIE OCI 部分（利率变动效应） |
-| `assumption_chg_pl` | 假设变更 → P&L |
-| `assumption_chg_csm` | 假设变更 → CSM（profitable cohort） |
-| `dair` | 锁定折现率（年化，用于计算 IFIE） |
-| `cession_rate` | QS 分出比例（0–1） |
-| `premium_written` | PAA：当期承保保费 |
-| `premium_earned` | PAA：当期赚取保费（负数） |
-| `iacf_amortisation` | PAA：获取成本摊销 |
+For LogNormal(μ, σ):
+E[X∧d] = e^(μ+σ²/2) · Φ((ln d − μ − σ²)/σ) + d·[1 − Φ((ln d − μ)/σ)]
+```
+
+### IFRS 17 Disclosure Notes (Tab 📋)
+Generates all 6 standard disclosure tables required by IFRS 17.97–132:
+- Note 1: ICL Rollforward (by AOC line item × model)
+- Note 2: ICL Balance by Component (PVFCF / RA / CSM / LC)
+- Note 3: Analysis of Insurance Revenue
+- Note 4: Insurance Finance Income/Expense (P&L vs OCI)
+- Note 5: Reinsurance Contract Assets Movement
+- Note 6: Maturity Profile (undiscounted cash flows by time bucket)
 
 ---
 
-## IFRS 17 概念说明
+## Technical Stack
 
-### GMM（General Measurement Model / BBA）
-
-```
-ICL_LRC = PVFCF + RA + CSM    ← profitable cohort
-ICL_LRC = PVFCF + RA - LC     ← onerous cohort
-```
-
-**AOC 9 项拆解**：
-1. 新业务首次确认（Day-1 entry）
-2. 预期现金流释放（含 RA release）→ **Insurance Revenue**
-3. 经验差异（实际 vs 预期）→ **Insurance Service Expense**
-4. CSM 摊销（按覆盖单位）→ **Insurance Revenue**
-5. 亏损合同 LC 回转 → **Insurance Revenue / ISE**
-6. IFIE P&L（以 DAIR 展开折现）→ **IFIE（P&L）**
-7. IFIE OCI（当前利率 vs DAIR）→ **OCI**（使用 OCI option）
-8. 假设变更 → P&L（RA 变更 / onerous 调整）
-9. 假设变更 → CSM（非经济性假设，profitable cohort 吸收）
-
-### PAA（Premium Allocation Approach）
-
-适用于保障期 ≤ 1 年的合同（IFRS 17.53）：
-
-```
-LRC = Unearned Premium Reserve (UPR) - IACF_asset + LC（若 onerous）
-```
-
-**关键差异**：无 CSM，ISR = 赚取保费，简化 IFIE。
-
-### Quota Share RCA
-
-```
-RCA_ICL = -cession_rate × gross_ICL（再保险合同资产 = 直接业务负债的镜像）
-RCA_AOC_item = -cession_rate × gross_AOC_item
-```
+| Component | Technology |
+|-----------|-----------|
+| Backend engine | Pure Python 3.10+ · `dataclasses` · `abc` |
+| Data processing | `pandas` |
+| Web UI | `Streamlit` |
+| Interactive charts | `Plotly` |
+| Config | `PyYAML` |
+| Statistics (LEV) | `scipy.stats` |
+| Export | `openpyxl` |
+| Deployment | Streamlit Community Cloud |
 
 ---
 
-## 路线图
+## Background
 
-- [x] Phase 1：GMM + PAA + QS RCA + Streamlit
-- [ ] Phase 2：VFA（Variable Fee Approach，参与型）
-- [ ] Phase 3：LIC（已发生理赔负债）分拆
-- [ ] Phase 4：Prophet 输出直接对接（CSV schema 映射）
-- [ ] Phase 5：多期间滚动（季度连续运行）
+Built as a portfolio project to demonstrate actuarial and financial modelling expertise
+in the IFRS 17 domain. The architecture mirrors the subledger systems used at major
+insurance companies — where actuarial systems (Prophet, MoSes, AXIS) feed into
+finance subledgers that generate compliant GL entries and regulatory disclosures.
 
 ---
 
 ## License
 
-MIT
+MIT © 2024
