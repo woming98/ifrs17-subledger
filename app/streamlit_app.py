@@ -307,7 +307,8 @@ c6.metric("Reconciliation",           "✅ All passed" if all_ok else "❌ Error
 # Tabs
 # ──────────────────────────────────────────────────────────────────────────────
 
-tab_aoc, tab_pl, tab_bs, tab_gl, tab_tb, tab_recon, tab_ts, tab_sens, tab_disc, tab_how = st.tabs([
+tab_dash, tab_aoc, tab_pl, tab_bs, tab_gl, tab_tb, tab_recon, tab_ts, tab_sens, tab_disc, tab_how = st.tabs([
+    "🏠 Dashboard",
     "📈 AOC Waterfall",
     "💹 P&L Summary",
     "🏦 Balance Sheet",
@@ -319,6 +320,338 @@ tab_aoc, tab_pl, tab_bs, tab_gl, tab_tb, tab_recon, tab_ts, tab_sens, tab_disc, 
     "📋 Disclosures",
     "📖 How It Works",
 ])
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# Tab 0 — Executive Dashboard (R)
+# ══════════════════════════════════════════════════════════════════════════════
+
+with tab_dash:
+    # ── Full-year aggregates ──────────────────────────────────────────────
+    _DASH_YEAR = "2024"
+    _fy_periods = sorted(k for k in all_results if k.startswith(_DASH_YEAR))
+    _fy_all: list = [r for p in _fy_periods for r in all_results[p]]
+    _fy_rca_flat: list = [r for p in _fy_periods for r in all_rca.get(p, [])]
+
+    # Closing balances (last period)
+    _last_aoc = all_results.get(_fy_periods[-1], []) if _fy_periods else []
+    _first_aoc = all_results.get(_fy_periods[0], []) if _fy_periods else []
+
+    def _s(lst, f):
+        return sum(getattr(r, f, 0.0) for r in lst)
+
+    # Gross ICL
+    _gross_icl_open  = _s(_first_aoc, "bom_pvfcf") + _s(_first_aoc, "bom_ra") + _s(_first_aoc, "bom_csm") - _s(_first_aoc, "bom_lc")
+    _gross_icl_close = _s(_last_aoc,  "eom_pvfcf") + _s(_last_aoc,  "eom_ra") + _s(_last_aoc,  "eom_csm") - _s(_last_aoc,  "eom_lc")
+    _rca_close       = -sum(r.rca_eom_icl for r in _fy_rca_flat if r.period == _fy_periods[-1])  # asset +ve
+    _net_icl_close   = _gross_icl_close - _rca_close
+
+    # CSM
+    _csm_open  = _s(_first_aoc, "bom_csm")
+    _csm_close = _s(_last_aoc,  "eom_csm")
+    _lc_open   = _s(_first_aoc, "bom_lc")
+    _lc_close  = _s(_last_aoc,  "eom_lc")
+
+    # Full-year P&L
+    _fy_isr   = -(_s(_fy_all, "expected_cf_release") + _s(_fy_all, "csm_amortisation")
+                  + min(_s(_fy_all, "lc_reversal"), 0.0))
+    _fy_ise   = _s(_fy_all, "experience_variance") + max(_s(_fy_all, "lc_reversal"), 0.0)
+    _fy_ifie  = _s(_fy_all, "finance_charge_pl")
+    _fy_aspl  = _s(_fy_all, "assumption_chg_pl")
+    _fy_ri_rev = -sum(
+        r.rca_expected_cf_release + r.rca_csm_amortisation
+        for r in _fy_rca_flat
+    )
+    _fy_net_pl = _fy_isr - _fy_ise + _fy_ifie + _fy_aspl + _fy_ri_rev
+
+    # CSM bridge components
+    _csm_amort   = _s(_fy_all, "csm_amortisation")       # negative
+    _csm_as_csm  = _s(_fy_all, "assumption_chg_csm")     # intra-ICL
+    _csm_und     = sum(getattr(r, "underlying_items_chg", 0.0) for r in _fy_all)
+    _csm_new_biz = _csm_close - _csm_open - _csm_amort - _csm_as_csm - _csm_und  # residual = new biz + exp var underlying
+
+    # Health ratios
+    _csm_coverage = (_csm_close / _gross_icl_close * 100) if _gross_icl_close else 0
+    _onerous_share = (_lc_close / (_lc_close + _csm_close) * 100) if (_lc_close + _csm_close) > 0 else 0
+    _ri_coverage   = (_rca_close / _gross_icl_close * 100) if _gross_icl_close else 0
+    _isr_yield     = (_fy_isr / ((_gross_icl_open + _gross_icl_close) / 2) * 100) if _gross_icl_open else 0
+
+    # ── Section title ─────────────────────────────────────────────────────
+    st.markdown("## 🏠 Executive Dashboard — IFRS 17 Portfolio Overview  |  Full Year 2024")
+    st.caption(f"Portfolio: {len(_last_aoc)} cohorts · GMM + PAA + VFA · HKD '000 · Recon: {'✅ All passed' if all(a.reconciliation_ok for a in _last_aoc) else '⚠️ Check needed'}")
+
+    # ── Row 1: KPI cards ──────────────────────────────────────────────────
+    k1, k2, k3, k4, k5, k6 = st.columns(6)
+    k1.metric("Gross ICL (Closing)",  f"{_gross_icl_close:,.0f}",
+              delta=f"{_gross_icl_close - _gross_icl_open:,.0f} vs Jan-24",
+              delta_color="inverse")
+    k2.metric("Net ICL (after RI)",   f"{_net_icl_close:,.0f}",
+              help="Gross ICL minus Reinsurance Contract Asset")
+    k3.metric("CSM (Closing)",        f"{_csm_close:,.0f}",
+              delta=f"{_csm_close - _csm_open:,.0f}",
+              delta_color="normal")
+    k4.metric("Full-Year ISR",        f"{_fy_isr:,.0f}",
+              help="Insurance Revenue recognised in 2024")
+    k5.metric("Full-Year Net P&L",    f"{_fy_net_pl:,.0f}",
+              help="Net insurance result including RI and IFIE")
+    k6.metric("RI Coverage",          f"{_ri_coverage:.1f}%",
+              help="Reinsurance Contract Asset / Gross ICL")
+
+    st.divider()
+
+    # ── Row 2: ICL Donut + CSM Bridge ─────────────────────────────────────
+    col_donut, col_csm = st.columns([1, 2])
+
+    with col_donut:
+        st.subheader("ICL Mix by Model")
+        _model_icl = {}
+        for r in _last_aoc:
+            m = r.measurement_model
+            _model_icl[m] = _model_icl.get(m, 0.0) + r.eom_icl
+        _model_colors = {"GMM": "#3b82f6", "VFA": "#8b5cf6", "PAA": "#22c55e"}
+        fig_donut = go.Figure(go.Pie(
+            labels=list(_model_icl.keys()),
+            values=[round(v, 1) for v in _model_icl.values()],
+            hole=0.55,
+            marker_colors=[_model_colors.get(m, "#94a3b8") for m in _model_icl],
+            textinfo="label+percent",
+            hovertemplate="%{label}: %{value:,.1f} ('000 HKD)<br>%{percent}<extra></extra>",
+        ))
+        fig_donut.add_annotation(
+            text=f"<b>{_gross_icl_close:,.0f}</b><br><span style='font-size:10px'>Gross ICL</span>",
+            x=0.5, y=0.5, showarrow=False, font=dict(size=14),
+        )
+        fig_donut.update_layout(
+            height=320, margin=dict(l=10, r=10, t=20, b=10),
+            showlegend=True, legend=dict(orientation="h", y=-0.1),
+        )
+        st.plotly_chart(fig_donut, use_container_width=True)
+
+        # ── Mini health table ──────────────────────────────────────────────
+        _health = pd.DataFrame([
+            {"Indicator": "CSM Coverage",   "Value": f"{_csm_coverage:.1f}%",
+             "Meaning": "Profit locked in ICL"},
+            {"Indicator": "Onerous Share",  "Value": f"{_onerous_share:.1f}%",
+             "Meaning": "LC / (LC + CSM)"},
+            {"Indicator": "RI Coverage",    "Value": f"{_ri_coverage:.1f}%",
+             "Meaning": "RCA / Gross ICL"},
+            {"Indicator": "ISR Yield",      "Value": f"{_isr_yield:.1f}%",
+             "Meaning": "ISR / Avg ICL"},
+        ])
+        st.dataframe(_health, use_container_width=True, hide_index=True, height=180)
+
+    with col_csm:
+        st.subheader("CSM Bridge — Full Year 2024")
+        _csm_labels = [
+            "Opening CSM<br>(1 Jan 2024)",
+            "New Business<br>& Other",
+            "Assumption Δ<br>→ CSM",
+            "VFA: Underlying<br>Items Δ",
+            "CSM Amortisation<br>(→ Revenue)",
+            "Closing CSM<br>(31 Dec 2024)",
+        ]
+        _csm_values = [
+            _csm_open,
+            round(_csm_new_biz, 1),
+            round(_csm_as_csm, 1),
+            round(_csm_und, 1),
+            round(_csm_amort, 1),
+            _csm_close,
+        ]
+        _csm_measure = ["absolute", "relative", "relative", "relative", "relative", "total"]
+        _csm_bar_colors = [
+            "#3b82f6",  # opening: blue
+            "#22c55e",  # NB: green
+            "#a855f7",  # assumption → CSM: purple
+            "#f59e0b",  # VFA underlying: amber
+            "#ef4444",  # amortisation (negative): red
+            "#1d4ed8",  # closing: dark blue
+        ]
+        fig_csm_bridge = go.Figure(go.Waterfall(
+            orientation="v",
+            measure=_csm_measure,
+            x=_csm_labels,
+            y=_csm_values,
+            connector=dict(line=dict(color="#cbd5e1", width=1, dash="dot")),
+            increasing=dict(marker_color="#22c55e"),
+            decreasing=dict(marker_color="#ef4444"),
+            totals=dict(marker_color="#3b82f6"),
+            text=[f"{v:,.0f}" for v in _csm_values],
+            textposition="outside",
+            hovertemplate="%{x}: %{y:,.1f} ('000 HKD)<extra></extra>",
+        ))
+        fig_csm_bridge.update_layout(
+            title="CSM: Opening → Movements → Closing ('000 HKD)",
+            height=380, margin=dict(l=40, r=40, t=50, b=40),
+            yaxis_title="'000 HKD",
+            showlegend=False,
+        )
+        st.plotly_chart(fig_csm_bridge, use_container_width=True)
+
+    st.divider()
+
+    # ── Row 3: P&L Waterfall + Cohort Heatmap ─────────────────────────────
+    col_pl, col_heat = st.columns([3, 2])
+
+    with col_pl:
+        st.subheader("P&L Waterfall — Full Year 2024")
+        _pl_labels = [
+            "Insurance<br>Revenue (ISR)",
+            "Insurance<br>Service Exp (ISE)",
+            "IFIE — P&L<br>(DAIR unwind)",
+            "Assumption Δ<br>→ P&L",
+            "RI Net<br>Revenue",
+            "Net Insurance<br>Result",
+        ]
+        _pl_values = [
+            round(_fy_isr, 1),
+            round(-_fy_ise, 1),
+            round(_fy_ifie, 1),
+            round(_fy_aspl, 1),
+            round(_fy_ri_rev, 1),
+            round(_fy_net_pl, 1),
+        ]
+        _pl_measure = ["relative", "relative", "relative", "relative", "relative", "total"]
+
+        fig_pl_wf = go.Figure(go.Waterfall(
+            orientation="v",
+            measure=_pl_measure,
+            x=_pl_labels,
+            y=_pl_values,
+            connector=dict(line=dict(color="#cbd5e1", width=1, dash="dot")),
+            increasing=dict(marker_color="#22c55e"),
+            decreasing=dict(marker_color="#ef4444"),
+            totals=dict(marker_color="#1d4ed8"),
+            text=[f"{v:+,.0f}" for v in _pl_values],
+            textposition="outside",
+            hovertemplate="%{x}: %{y:,.1f} ('000 HKD)<extra></extra>",
+        ))
+        fig_pl_wf.update_layout(
+            title="Full Year 2024 P&L Build-up ('000 HKD)",
+            height=380, margin=dict(l=40, r=40, t=50, b=40),
+            yaxis_title="'000 HKD",
+            showlegend=False,
+        )
+        st.plotly_chart(fig_pl_wf, use_container_width=True)
+
+    with col_heat:
+        st.subheader("Cohort Snapshot")
+        _cohort_rows = []
+        for r in sorted(_last_aoc, key=lambda x: -x.eom_icl):
+            _status = "🟢 Profitable" if r.eom_csm > 0 else ("☠️ Recovering" if r.cohort_id == "MED_ONR_RECOVERY" and r.eom_lc == 0 else "🔴 Onerous")
+            _cohort_rows.append({
+                "Cohort": r.cohort_id,
+                "Model": r.measurement_model,
+                "ICL": round(r.eom_icl, 0),
+                "CSM": round(r.eom_csm, 0),
+                "LC":  round(r.eom_lc, 0),
+                "Status": _status,
+            })
+        _cohort_snap = pd.DataFrame(_cohort_rows)
+
+        def _snap_style(row):
+            if "Onerous" in row["Status"]:
+                return ["background-color:#fff1f2"] * len(row)
+            if "Recovering" in row["Status"]:
+                return ["background-color:#f0fdf4"] * len(row)
+            return [""] * len(row)
+
+        st.dataframe(
+            _cohort_snap.style.apply(_snap_style, axis=1)
+                .format({"ICL": "{:,.0f}", "CSM": "{:,.0f}", "LC": "{:,.0f}"}),
+            use_container_width=True, hide_index=True, height=330,
+        )
+
+    st.divider()
+
+    # ── Row 4: Portfolio trends mini sparklines ───────────────────────────
+    st.subheader("Portfolio Trends (Quarterly)")
+    _port_ts = portfolio_timeseries(ts_df)
+
+    _col_s1, _col_s2, _col_s3 = st.columns(3)
+
+    with _col_s1:
+        fig_icl_trend = go.Figure()
+        fig_icl_trend.add_scatter(
+            x=_port_ts["period"], y=_port_ts["eom_icl"],
+            mode="lines+markers+text",
+            line=dict(color="#3b82f6", width=3),
+            marker=dict(size=8),
+            text=[f"{v:,.0f}" for v in _port_ts["eom_icl"]],
+            textposition="top center", textfont=dict(size=9),
+        )
+        fig_icl_trend.update_layout(
+            title="Gross ICL Trend", height=220,
+            margin=dict(l=20, r=20, t=40, b=20),
+            xaxis=dict(showgrid=False), yaxis_title="'000",
+        )
+        st.plotly_chart(fig_icl_trend, use_container_width=True)
+
+    with _col_s2:
+        fig_csm_trend = go.Figure()
+        fig_csm_trend.add_scatter(
+            x=_port_ts["period"], y=_port_ts["eom_csm"],
+            mode="lines+markers+text",
+            line=dict(color="#22c55e", width=3),
+            marker=dict(size=8),
+            text=[f"{v:,.0f}" for v in _port_ts["eom_csm"]],
+            textposition="top center", textfont=dict(size=9),
+        )
+        fig_csm_trend.add_scatter(
+            x=_port_ts["period"], y=_port_ts["eom_lc"],
+            mode="lines+markers",
+            line=dict(color="#ef4444", width=2, dash="dash"),
+            marker=dict(size=6), name="LC",
+        )
+        fig_csm_trend.update_layout(
+            title="CSM (green) vs LC (red dashed) Trend", height=220,
+            margin=dict(l=20, r=20, t=40, b=20),
+            xaxis=dict(showgrid=False), yaxis_title="'000",
+            showlegend=False,
+        )
+        st.plotly_chart(fig_csm_trend, use_container_width=True)
+
+    with _col_s3:
+        fig_isr_trend = go.Figure()
+        fig_isr_trend.add_bar(
+            x=_port_ts["period"], y=_port_ts["insurance_revenue"],
+            marker_color="#22c55e", name="ISR", opacity=0.85,
+        )
+        fig_isr_trend.add_bar(
+            x=_port_ts["period"], y=-_port_ts["insurance_service_expense"],
+            marker_color="#ef4444", name="ISE (negative)", opacity=0.75,
+        )
+        fig_isr_trend.update_layout(
+            barmode="group",
+            title="ISR vs ISE by Quarter", height=220,
+            margin=dict(l=20, r=20, t=40, b=20),
+            xaxis=dict(showgrid=False), yaxis_title="'000",
+            showlegend=True,
+            legend=dict(orientation="h", y=-0.3),
+        )
+        st.plotly_chart(fig_isr_trend, use_container_width=True)
+
+    # ── Onerous highlight ─────────────────────────────────────────────────
+    st.divider()
+    st.subheader("☠️ → 🟢  Onerous Contract Highlight")
+    _onr_col1, _onr_col2, _onr_col3, _onr_col4, _onr_col5 = st.columns(5)
+    _onr_cohorts = [r for r in _last_aoc if r.eom_lc > 0 or r.cohort_id == "MED_ONR_RECOVERY"]
+    _total_lc = sum(r.eom_lc for r in _last_aoc)
+    _n_onerous = sum(1 for r in _last_aoc if r.eom_lc > 0)
+    _recovered = any(r.cohort_id == "MED_ONR_RECOVERY" and r.eom_lc == 0 and r.eom_csm > 0
+                     for r in _last_aoc)
+
+    _onr_col1.metric("Onerous Cohorts (Closing)", str(_n_onerous),
+                     help="Cohorts with LC > 0 at 31 Dec 2024")
+    _onr_col2.metric("Total LC (Closing)", f"{_total_lc:,.0f}",
+                     delta=f"{_total_lc - _lc_open:,.0f}", delta_color="inverse")
+    _onr_col3.metric("Onerous % of Portfolio", f"{_onerous_share:.1f}%",
+                     help="LC / (LC + CSM) at 31 Dec 2024")
+    _onr_col4.metric("MED_ONR_RECOVERY", "✅ Recovered!" if _recovered else "Still onerous",
+                     help="The cohort that completed the full onerous→profitable lifecycle")
+    _onr_col5.metric("New CSM from Recovery", f"{next((r.eom_csm for r in _last_aoc if r.cohort_id == 'MED_ONR_RECOVERY'), 0):,.0f}",
+                     help="CSM born when LC cleared in Q4 2024")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1032,9 +1365,6 @@ All amounts in **HKD '000**. Intra-ICL transfers (CSM/PVFCF reclassifications) a
 
         # Visual: Net change by model bar chart
         with st.expander("📊 Visual: Net ICL Change by Model & Movement Category"):
-            import plotly.graph_objects as go
-            import plotly.express as px
-
             # Extract key rows for the visual
             svc_rows = {
                 "Exp. CF Release": "② Expected CF Release (incl. RA release)",
@@ -1186,7 +1516,9 @@ VFA contracts generally don't use the OCI option — the underlying items mechan
     st.markdown("### Note 5 — Reinsurance Contract Assets: Movement in 2024")
     st.caption("IFRS 17.60–70A — The ceded reinsurance programme mirrors the direct ICL at the cession rate")
 
-    n5 = note5_rca_movement(all_rca, _YEAR)
+    # all_rca is a dict {period: [RCASummary]}; flatten for note5
+    _all_rca_flat = [r for rcas in all_rca.values() for r in rcas]
+    n5 = note5_rca_movement(_all_rca_flat, _YEAR)
     if not n5.empty:
         def _style_n5(row):
             label = str(row.name).strip()
