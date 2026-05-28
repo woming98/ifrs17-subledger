@@ -36,6 +36,11 @@ from src.subledger import ChartOfAccounts, generate_journal
 from src.reconciliation import reconcile_portfolio, check_journal_balance, aoc_waterfall
 from src.analytics import build_timeseries, portfolio_timeseries
 from src.report import pl_summary, bs_summary, aoc_detail, gl_detail, trial_balance
+from src.disclosures import (
+    note1_icl_movement, note2_icl_components,
+    note3_insurance_revenue, note4_ifie,
+    note5_rca_movement, note6_maturity_profile, note1_cohort_detail,
+)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Page config
@@ -302,7 +307,7 @@ c6.metric("Reconciliation",           "✅ All passed" if all_ok else "❌ Error
 # Tabs
 # ──────────────────────────────────────────────────────────────────────────────
 
-tab_aoc, tab_pl, tab_bs, tab_gl, tab_tb, tab_recon, tab_ts, tab_sens, tab_how = st.tabs([
+tab_aoc, tab_pl, tab_bs, tab_gl, tab_tb, tab_recon, tab_ts, tab_sens, tab_disc, tab_how = st.tabs([
     "📈 AOC Waterfall",
     "💹 P&L Summary",
     "🏦 Balance Sheet",
@@ -311,6 +316,7 @@ tab_aoc, tab_pl, tab_bs, tab_gl, tab_tb, tab_recon, tab_ts, tab_sens, tab_how = 
     "✅ Reconciliation",
     "📉 Time Series",
     "🎯 Sensitivity",
+    "📋 Disclosures",
     "📖 How It Works",
 ])
 
@@ -984,7 +990,329 @@ For onerous contracts and PAA: ΔPVFCF flows to ICL and P&L.
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Tab 9 — How It Works (NEW)
+# ══════════════════════════════════════════════════════════════════════════════
+# Tab 9 — Disclosures (J2)
+# ══════════════════════════════════════════════════════════════════════════════
+
+with tab_disc:
+    st.markdown("## 📋 IFRS 17 Disclosure Notes — Full Year 2024")
+    st.markdown("""
+These notes follow the **IFRS 17 quantitative disclosure requirements** (paragraphs 97–132).  
+All amounts in **HKD '000**. Intra-ICL transfers (CSM/PVFCF reclassifications) are separately identified.
+""")
+
+    _YEAR = "2024"
+
+    # ── Note 1: ICL Movement Table ────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### Note 1 — Insurance Contract Liabilities: Movement in 2024")
+    st.caption("IFRS 17.100A — Rollforward of the ICL balance by AOC line item and measurement model")
+
+    n1 = note1_icl_movement(all_results, _YEAR)
+    if not n1.empty:
+        def _style_n1(row):
+            styles = [""] * len(row)
+            label = str(row.name).strip()
+            if label.startswith("Opening") or label.startswith("Closing"):
+                styles = ["font-weight:700; background-color:#f0f4ff"] * len(row)
+            elif label.startswith("Sub-total") or label.startswith("Net Change"):
+                styles = ["font-weight:600; background-color:#f8fafc"] * len(row)
+            elif label.startswith("───"):
+                styles = ["color:#6b7280; font-style:italic"] * len(row)
+            return styles
+
+        numeric_cols = [c for c in n1.columns if c in ["GMM", "VFA", "PAA", "Total"]]
+        fmt_dict = {c: "{:,.1f}" for c in numeric_cols}
+
+        st.dataframe(
+            n1.style.apply(_style_n1, axis=1).format(fmt_dict, na_rep=""),
+            use_container_width=True,
+            height=550,
+        )
+
+        # Visual: Net change by model bar chart
+        with st.expander("📊 Visual: Net ICL Change by Model & Movement Category"):
+            import plotly.graph_objects as go
+            import plotly.express as px
+
+            # Extract key rows for the visual
+            svc_rows = {
+                "Exp. CF Release": "② Expected CF Release (incl. RA release)",
+                "Exp. Variance":   "    ③ Experience Variance",
+                "CSM Amortisation":"    ④ CSM Amortisation",
+                "LC Reversal":     "    ⑤ LC Reversal / Additional LC",
+                "Assumption Δ P&L":"    ⑧ Assumption Changes → P&L",
+            }
+            fi_rows = {
+                "IFIE P&L":  "    ⑥ IFIE — P&L (locked-in DAIR unwind)",
+                "IFIE OCI":  "    ⑦ IFIE — OCI (current rate vs DAIR)",
+            }
+            models_vis = ["GMM", "VFA", "PAA"]
+            colors = {"GMM": "#3b82f6", "VFA": "#8b5cf6", "PAA": "#22c55e"}
+
+            fig_mv = go.Figure()
+            for row_label, row_key in {**svc_rows, **fi_rows}.items():
+                if row_key in n1.index:
+                    row_data = n1.loc[row_key]
+                    for m in models_vis:
+                        val = row_data.get(m, 0)
+                        if isinstance(val, str) or val == 0:
+                            continue
+                        fig_mv.add_bar(
+                            name=f"{m}: {row_label}",
+                            x=[m], y=[float(val)],
+                            marker_color=colors.get(m, "#64748b"),
+                            opacity=0.75,
+                            legendgroup=m,
+                            showlegend=True,
+                            text=[row_label],
+                        )
+            fig_mv.update_layout(
+                barmode="relative",
+                title="ICL Net Change by Movement Category and Model ('000 HKD)",
+                height=420, margin=dict(l=40, r=40, t=60, b=40),
+                xaxis_title="Measurement Model",
+                yaxis_title="Amount ('000 HKD)",
+            )
+            st.plotly_chart(fig_mv, use_container_width=True)
+    else:
+        st.info("Run the subledger to generate disclosure data.")
+
+    # ── Note 2: ICL Balance by Component ─────────────────────────────────
+    st.markdown("---")
+    st.markdown("### Note 2 — ICL Balance by Component")
+    st.caption("IFRS 17 — Opening and closing balances for PVFCF, RA, CSM, and LC by measurement model")
+
+    n2 = note2_icl_components(all_results, _YEAR)
+    if not n2.empty:
+        def _style_n2(row):
+            styles = [""] * len(row)
+            comp = str(row.name[-1]) if hasattr(row.name, '__len__') else str(row.name)
+            if comp == "Total ICL":
+                styles = ["font-weight:700; background-color:#f0f4ff"] * len(row)
+            return styles
+
+        st.dataframe(
+            n2.style.apply(_style_n2, axis=1)
+              .format("{:,.1f}")
+              .map(lambda v: "color:#ef4444" if isinstance(v, float) and v < 0 else
+                             ("color:#16a34a" if isinstance(v, float) and v > 0 else ""),
+                   subset=["Change"]),
+            use_container_width=True,
+            height=500,
+        )
+
+        # Stacked bar: opening vs closing by model
+        with st.expander("📊 Visual: Opening vs Closing ICL by Component"):
+            n2_reset = n2.reset_index()
+            n2_total = n2_reset[n2_reset["Model"] == "TOTAL"]
+            comps = ["PVFCF", "RA", "CSM", "LC"]
+            fig_comp = go.Figure()
+            comp_colors = {"PVFCF": "#3b82f6", "RA": "#f59e0b", "CSM": "#22c55e", "LC": "#ef4444"}
+            for comp in comps:
+                row_c = n2_total[n2_total["Component"] == comp]
+                if row_c.empty:
+                    continue
+                open_v = float(row_c["Opening"].iloc[0])
+                close_v = float(row_c["Closing"].iloc[0])
+                # LC is a negative entry in ICL (already negated in Note 2)
+                fig_comp.add_bar(name=f"{comp} (Opening)", x=["Opening"],
+                                 y=[open_v], marker_color=comp_colors[comp], opacity=0.6)
+                fig_comp.add_bar(name=f"{comp} (Closing)", x=["Closing"],
+                                 y=[close_v], marker_color=comp_colors[comp])
+            fig_comp.update_layout(
+                barmode="stack",
+                title="Portfolio ICL: Opening vs Closing — by Component ('000 HKD)",
+                height=380, margin=dict(l=40, r=40, t=60, b=40),
+            )
+            st.plotly_chart(fig_comp, use_container_width=True)
+
+    # ── Note 3: Insurance Revenue Analysis ───────────────────────────────
+    st.markdown("---")
+    st.markdown("### Note 3 — Analysis of Insurance Revenue")
+    st.caption("IFRS 17.83 — Components of Insurance Revenue recognised in 2024")
+
+    n3 = note3_insurance_revenue(all_results, _YEAR)
+    if not n3.empty:
+        def _style_n3(row):
+            if row.name == "Total":
+                return ["font-weight:700; background-color:#f0f4ff"] * len(row)
+            return [""] * len(row)
+
+        isr_cols = [c for c in n3.columns if c != "— Additional LC Recognised (ISE)"]
+        st.dataframe(
+            n3.style.apply(_style_n3, axis=1)
+              .format("{:,.1f}")
+              .bar(subset=["Total Insurance Revenue (ISR)"],
+                   color="#bbf7d0", vmin=0),
+            use_container_width=True,
+        )
+
+        st.info("""
+**Reading guide:**
+- **Expected CF Release**: Release of expected future benefits + RA unwinding (the core of revenue)  
+- **CSM Amortisation**: Profit margin released as service is delivered (equal coverage units)  
+- **LC Release**: For onerous contracts — LC reversal is also recognised as revenue (service delivery)  
+- **Total ISR**: This is the "top-line" of an IFRS 17 insurer's income statement
+""")
+
+    # ── Note 4: IFIE ──────────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### Note 4 — Insurance Finance Income / Expense (IFIE)")
+    st.caption("IFRS 17.88–92 — Split between P&L (locked-in DAIR) and OCI (rate change effect)")
+
+    n4 = note4_ifie(all_results, _YEAR)
+    if not n4.empty:
+        def _style_n4(row):
+            if row.name == "Total":
+                return ["font-weight:700; background-color:#f0f4ff"] * len(row)
+            return [""] * len(row)
+
+        st.dataframe(
+            n4.style.apply(_style_n4, axis=1).format("{:,.1f}"),
+            use_container_width=True,
+        )
+        st.info("""
+**OCI option explained:** Under the OCI option (applied to GMM cohorts here), the total IFIE is split:  
+— **P&L**: Uses the DAIR (locked-in rate at inception). Stable, predictable line in the income statement.  
+— **OCI**: The difference between DAIR and the current discount rate applied to PVFCF.  
+  When rates rise: OCI is negative (accumulated OCI reserve builds up, reduces equity).  
+  This is released back to P&L over the remaining contract lifetime.  
+VFA contracts generally don't use the OCI option — the underlying items mechanism already routes most IFIE through CSM.
+""")
+
+    # ── Note 5: RCA Movement ──────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### Note 5 — Reinsurance Contract Assets: Movement in 2024")
+    st.caption("IFRS 17.60–70A — The ceded reinsurance programme mirrors the direct ICL at the cession rate")
+
+    n5 = note5_rca_movement(all_rca, _YEAR)
+    if not n5.empty:
+        def _style_n5(row):
+            label = str(row.name).strip()
+            if label.startswith("Opening") or label.startswith("Closing"):
+                return ["font-weight:700; background-color:#f0f4ff"] * len(row)
+            elif label.startswith("Sub-total") or label.startswith("Net Change"):
+                return ["font-weight:600; background-color:#f8fafc"] * len(row)
+            elif label.startswith("───"):
+                return ["color:#6b7280; font-style:italic"] * len(row)
+            return [""] * len(row)
+
+        st.dataframe(
+            n5.style.apply(_style_n5, axis=1).format("{:,.1f}", na_rep=""),
+            use_container_width=True,
+        )
+        st.caption("""
+*RCA is presented as an asset (positive = recoverable from reinsurers).  
+The movement mirrors the gross ICL at the effective cession rate per cohort.*
+""")
+
+    # ── Note 6: Maturity Profile ──────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### Note 6 — Maturity Profile of Undiscounted Future Cash Flows")
+    st.caption("IFRS 17.132(b) — Expected timing of net future cash flows by time bucket")
+
+    n6 = note6_maturity_profile(all_results, _YEAR)
+    if not n6.empty:
+        def _style_n6(row):
+            if row.name[0] == "TOTAL":
+                return ["font-weight:700; background-color:#f0f4ff"] * len(row)
+            return [""] * len(row)
+
+        bucket_cols = ["< 1 year", "1 – 3 years", "3 – 5 years", "> 5 years", "Grand Total"]
+        fmt_cols = {c: "{:,.1f}" for c in bucket_cols if c in n6.columns}
+        st.dataframe(
+            n6.style.apply(_style_n6, axis=1)
+              .format(fmt_cols)
+              .bar(subset=["Grand Total"], color="#dbeafe", vmin=0),
+            use_container_width=True,
+            height=380,
+        )
+
+        # Stacked bar chart
+        with st.expander("📊 Visual: Maturity Distribution by Cohort"):
+            n6_reset = n6.reset_index()
+            n6_data = n6_reset[n6_reset["Cohort"] != "TOTAL"]
+            bucket_labels = ["< 1 year", "1 – 3 years", "3 – 5 years", "> 5 years"]
+            bucket_colors = ["#3b82f6", "#22c55e", "#f59e0b", "#8b5cf6"]
+
+            fig_mat = go.Figure()
+            for b_label, b_color in zip(bucket_labels, bucket_colors):
+                if b_label in n6_data.columns:
+                    fig_mat.add_bar(
+                        name=b_label,
+                        x=n6_data["Cohort"],
+                        y=n6_data[b_label],
+                        marker_color=b_color,
+                    )
+            fig_mat.update_layout(
+                barmode="stack",
+                title="Undiscounted Future Cash Flows by Maturity Bucket ('000 HKD)",
+                height=400, margin=dict(l=40, r=40, t=60, b=80),
+                xaxis_title="Cohort", yaxis_title="Undiscounted CF ('000 HKD)",
+                xaxis=dict(tickangle=-30),
+            )
+            st.plotly_chart(fig_mat, use_container_width=True)
+
+        st.caption("""
+*Simplified: assumes uniform cash flow distribution over expected duration  
+(GMM: 8 yrs, VFA: 15 yrs, PAA: 0.5 yrs). Undiscounted approximation = PVFCF × 1.12.*
+""")
+
+    # ── Cohort detail (supplement) ────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### Supplement — Per-Cohort ICL Summary")
+    st.caption("Full-year 2024 rollforward by cohort — useful for audit and management reporting")
+
+    nd = note1_cohort_detail(all_results, _YEAR)
+    if not nd.empty:
+        def _style_nd(row):
+            if row.name.startswith("MED_ONR"):
+                return ["background-color:#fff7ed"] * len(row)
+            return [""] * len(row)
+
+        fmt_nd = {c: "{:,.1f}" for c in nd.select_dtypes("number").columns}
+        st.dataframe(
+            nd.style.apply(_style_nd, axis=1)
+              .format(fmt_nd)
+              .map(lambda v: "color:#ef4444;font-weight:700"
+                   if isinstance(v, float) and v > 5 and "LC" in str(v) else "", subset=["Closing LC"])
+              .highlight_max(subset=["Closing CSM"], color="#dcfce7"),
+            use_container_width=True,
+        )
+
+    # ── Excel download ─────────────────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("⬇️  Download Disclosure Notes")
+    import io as _io_disc
+    buf_disc = _io_disc.BytesIO()
+    with pd.ExcelWriter(buf_disc, engine="openpyxl") as writer:
+        if not n1.empty:
+            n1.to_excel(writer, sheet_name="Note1_ICL_Movement")
+        if not n2.empty:
+            n2.to_excel(writer, sheet_name="Note2_ICL_Components")
+        if not n3.empty:
+            n3.to_excel(writer, sheet_name="Note3_Insurance_Revenue")
+        if not n4.empty:
+            n4.to_excel(writer, sheet_name="Note4_IFIE")
+        if not n5.empty:
+            n5.to_excel(writer, sheet_name="Note5_RCA_Movement")
+        if not n6.empty:
+            n6.to_excel(writer, sheet_name="Note6_Maturity")
+        if not nd.empty:
+            nd.to_excel(writer, sheet_name="Cohort_Detail")
+    buf_disc.seek(0)
+    st.download_button(
+        "📥  Download Disclosure Notes (.xlsx)",
+        data=buf_disc,
+        file_name="IFRS17_Disclosures_2024.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Tab 10 — How It Works (NEW)
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tab_how:
