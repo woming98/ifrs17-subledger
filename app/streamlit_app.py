@@ -35,7 +35,10 @@ from src.reinsurance_xl import compute_rca_treaties, load_treaties
 from src.subledger import ChartOfAccounts, generate_journal
 from src.reconciliation import reconcile_portfolio, check_journal_balance, aoc_waterfall
 from src.analytics import build_timeseries, portfolio_timeseries, project_csm_runoff
-from src.report import pl_summary, bs_summary, aoc_detail, gl_detail, trial_balance
+from src.report import (
+    pl_summary, bs_summary, aoc_detail, gl_detail, trial_balance,
+    write_formatted_excel,
+)
 from src.disclosures import (
     note1_icl_movement, note2_icl_components,
     note3_insurance_revenue, note4_ifie,
@@ -2185,23 +2188,16 @@ The movement mirrors the gross ICL at the effective cession rate per cohort.*
     # ── Excel download ─────────────────────────────────────────────────────
     st.markdown("---")
     st.subheader("⬇️  Download Disclosure Notes")
-    import io as _io_disc
-    buf_disc = _io_disc.BytesIO()
-    with pd.ExcelWriter(buf_disc, engine="openpyxl") as writer:
-        if not n1.empty:
-            n1.to_excel(writer, sheet_name="Note1_ICL_Movement")
-        if not n2.empty:
-            n2.to_excel(writer, sheet_name="Note2_ICL_Components")
-        if not n3.empty:
-            n3.to_excel(writer, sheet_name="Note3_Insurance_Revenue")
-        if not n4.empty:
-            n4.to_excel(writer, sheet_name="Note4_IFIE")
-        if not n5.empty:
-            n5.to_excel(writer, sheet_name="Note5_RCA_Movement")
-        if not n6.empty:
-            n6.to_excel(writer, sheet_name="Note6_Maturity")
-        if not nd.empty:
-            nd.to_excel(writer, sheet_name="Cohort_Detail")
+    buf_disc = io.BytesIO()
+    _disc_sheets = {}
+    if not n1.empty:  _disc_sheets["Note 1 — ICL Movement"]      = n1.reset_index()
+    if not n2.empty:  _disc_sheets["Note 2 — ICL Components"]    = n2.reset_index()
+    if not n3.empty:  _disc_sheets["Note 3 — Insurance Revenue"] = n3.reset_index()
+    if not n4.empty:  _disc_sheets["Note 4 — IFIE"]              = n4.reset_index()
+    if not n5.empty:  _disc_sheets["Note 5 — RCA Movement"]      = n5.reset_index()
+    if not n6.empty:  _disc_sheets["Note 6 — Maturity Profile"]  = n6.reset_index()
+    if not nd.empty:  _disc_sheets["Cohort Detail"]              = nd.reset_index()
+    write_formatted_excel(_disc_sheets, buf=buf_disc, period="FY 2024")
     buf_disc.seek(0)
     st.download_button(
         "📥  Download Disclosure Notes (.xlsx)",
@@ -2537,23 +2533,27 @@ st.divider()
 col_dl, col_info = st.columns([2, 5])
 
 with col_dl:
-    st.subheader("📤 Export Excel")
+    st.subheader("📤 Export Management Report (Excel)")
+    st.caption("Formatted workbook — title rows, coloured headers, bold totals, thousand-separator numbers, red negatives")
     if st.button("Generate & Download", type="secondary"):
         buf = io.BytesIO()
-        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-            pl_summary(aoc_list, rca_list).to_excel(writer,     sheet_name="P&L Summary",    index=False)
-            bs_summary(aoc_list, rca_list).to_excel(writer,     sheet_name="BS Summary",      index=False)
-            aoc_detail(aoc_list).to_excel(writer,               sheet_name="AOC Detail",      index=False)
-            gl_detail(batches).to_excel(writer,                 sheet_name="GL Entries",      index=False)
-            trial_balance(batches).to_excel(writer,             sheet_name="Trial Balance",   index=False)
-            reconcile_portfolio(aoc_list, tol).to_excel(writer, sheet_name="Reconciliation",  index=False)
-            ts_df.to_excel(writer,                              sheet_name="Time Series",     index=False)
+        _sheets = {
+            "P&L Summary":    pl_summary(aoc_list, rca_list),
+            "Balance Sheet":  bs_summary(aoc_list, rca_list),
+            "AOC Detail":     aoc_detail(aoc_list),
+            "GL Entries":     gl_detail(batches),
+            "Trial Balance":  trial_balance(batches),
+            "Reconciliation": reconcile_portfolio(aoc_list, tol),
+            "Time Series":    ts_df,
+        }
+        write_formatted_excel(_sheets, buf=buf, period=sel_period)
         buf.seek(0)
         st.download_button(
-            "⬇ Download Excel",
+            "⬇ Download Formatted Excel (.xlsx)",
             data=buf.getvalue(),
-            file_name=f"subledger_{sel_period}.xlsx",
+            file_name=f"IFRS17_Subledger_{sel_period}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
         )
 
 with col_info:

@@ -7,11 +7,20 @@ IFRS 17 — 报表生成模块
   3. GL 分录明细（完整借贷表）
   4. AOC 瀑布表（各项变动）
   5. 审计追踪（Audit Trail）：分录 ↔ AOC 项 ↔ cohort 映射
+
+格式化 Excel 导出函数：write_formatted_excel()
+  - 每个 Sheet 带标题行（深蓝底白字）
+  - 列表头浅蓝底粗体
+  - 合计行灰底粗体
+  - 数字千分位 + 2 位小数
+  - 负数红字
+  - 自动列宽 + 冻结首两行
 """
 
 from __future__ import annotations
 
-from typing import List
+from datetime import datetime
+from typing import Dict, List, Optional
 
 import pandas as pd
 
@@ -200,6 +209,159 @@ def aoc_detail(aoc_list: List[AOCResult]) -> pd.DataFrame:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# 格式化 Excel 引擎
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _style_sheet(
+    ws,
+    df: pd.DataFrame,
+    title: str,
+    total_marker: str = "__TOTAL__",
+    num_cols: Optional[List[str]] = None,
+) -> None:
+    """
+    对一个 openpyxl worksheet 应用管理报表格式：
+      - Row 1  : 报表标题（深蓝底白字，合并全列）
+      - Row 2  : 生成时间戳（灰底斜体）
+      - Row 3  : 列表头（浅蓝底粗体）
+      - Rows 4+: 数据行；合计行灰底粗体；负数红字；数字千分位
+      - 自动列宽（最大 40）；冻结前 3 行
+    """
+    try:
+        from openpyxl.styles import (
+            Font, PatternFill, Alignment, Border, Side, numbers
+        )
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        return   # openpyxl not available, skip styling
+
+    # ── Palette ──────────────────────────────────────────────────────────
+    BLUE_DARK   = PatternFill("solid", fgColor="1E3A5F")   # title bg
+    BLUE_LIGHT  = PatternFill("solid", fgColor="BDD7EE")   # header bg
+    GRAY_LIGHT  = PatternFill("solid", fgColor="F2F2F2")   # total bg
+    GRAY_TS     = PatternFill("solid", fgColor="D9D9D9")   # timestamp bg
+    RED_FONT    = Font(color="C00000")
+    WHITE_FONT  = Font(color="FFFFFF", bold=True, size=11)
+    HEADER_FONT = Font(bold=True, size=10)
+    TOTAL_FONT  = Font(bold=True, size=10)
+    TS_FONT     = Font(italic=True, size=9, color="595959")
+    THIN        = Side(style="thin", color="B8B8B8")
+    BORDER      = Border(bottom=Side(style="thin", color="B8B8B8"))
+    NUM_FMT     = '#,##0.00'
+    NUM_FMT_INT = '#,##0'
+
+    ncols = len(df.columns)
+    last_col_letter = get_column_letter(ncols)
+
+    # ── Insert title rows (push existing rows down by 2) ─────────────────
+    ws.insert_rows(1, 2)
+
+    # Row 1: Title
+    ws.merge_cells(f"A1:{last_col_letter}1")
+    title_cell = ws["A1"]
+    title_cell.value = title
+    title_cell.font = WHITE_FONT
+    title_cell.fill = BLUE_DARK
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 22
+
+    # Row 2: Timestamp
+    ws.merge_cells(f"A2:{last_col_letter}2")
+    ts_cell = ws["A2"]
+    ts_cell.value = f"Generated: {datetime.now().strftime('%d %b %Y  %H:%M')}  |  Amounts in '000 HKD"
+    ts_cell.font = TS_FONT
+    ts_cell.fill = GRAY_TS
+    ts_cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws.row_dimensions[2].height = 16
+
+    # Row 3: Column headers (now at row 3 after insert)
+    for col_idx, col_name in enumerate(df.columns, start=1):
+        cell = ws.cell(row=3, column=col_idx)
+        cell.value = col_name
+        cell.font = HEADER_FONT
+        cell.fill = BLUE_LIGHT
+        cell.alignment = Alignment(horizontal="center", wrap_text=True)
+        cell.border = Border(bottom=Side(style="medium", color="1E3A5F"))
+    ws.row_dimensions[3].height = 28
+
+    # ── Data rows ─────────────────────────────────────────────────────────
+    numeric_cols = set(df.select_dtypes(include="number").columns)
+    if num_cols:
+        numeric_cols = numeric_cols.union(set(num_cols))
+
+    for row_idx, row_data in enumerate(df.itertuples(index=False), start=4):
+        is_total = str(getattr(row_data, df.columns[0], "")).startswith(total_marker)
+        for col_idx, (col_name, val) in enumerate(zip(df.columns, row_data), start=1):
+            cell = ws.cell(row=row_idx, column=col_idx)
+            cell.value = val if not (isinstance(val, float) and pd.isna(val)) else None
+
+            if is_total:
+                cell.fill  = GRAY_LIGHT
+                cell.font  = TOTAL_FONT
+                cell.border = Border(top=Side(style="thin", color="595959"),
+                                     bottom=Side(style="medium", color="595959"))
+
+            if col_name in numeric_cols and isinstance(val, (int, float)) and not pd.isna(val):
+                cell.number_format = NUM_FMT
+                cell.alignment = Alignment(horizontal="right")
+                if val < 0:
+                    cell.font = Font(color="C00000", bold=is_total)
+            else:
+                cell.alignment = Alignment(horizontal="left", indent=1)
+
+    # ── Column widths ─────────────────────────────────────────────────────
+    for col_idx, col_name in enumerate(df.columns, start=1):
+        col_letter = get_column_letter(col_idx)
+        max_len = max(
+            len(str(col_name)),
+            *[len(str(ws.cell(row=r, column=col_idx).value or ""))
+              for r in range(4, ws.max_row + 1)],
+        )
+        ws.column_dimensions[col_letter].width = min(max_len + 3, 40)
+
+    # ── Freeze top 3 rows ─────────────────────────────────────────────────
+    ws.freeze_panes = "A4"
+
+    # ── Tab color ─────────────────────────────────────────────────────────
+    ws.sheet_properties.tabColor = "1E3A5F"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 格式化全量报告（一键 Excel 导出）
+# ──────────────────────────────────────────────────────────────────────────────
+
+def write_formatted_excel(
+    sheets: Dict[str, pd.DataFrame],
+    output_path: str = None,
+    buf=None,
+    period: str = "",
+) -> None:
+    """
+    将多张 DataFrame 写入格式化的 Excel。
+
+    Parameters
+    ----------
+    sheets      : {"Sheet Title": DataFrame, ...}  有序字典
+    output_path : 文件路径（与 buf 二选一）
+    buf         : io.BytesIO（与 output_path 二选一）
+    period      : 期间标签，显示在标题行
+    """
+    target = output_path or buf
+    report_date = datetime.now().strftime("%d %b %Y")
+
+    with pd.ExcelWriter(target, engine="openpyxl") as writer:
+        for sheet_name, df in sheets.items():
+            if df is None or df.empty:
+                continue
+            df.to_excel(writer, sheet_name=sheet_name[:31], index=False)
+            ws = writer.sheets[sheet_name[:31]]
+            full_title = f"IFRS 17 Subledger  —  {sheet_name}"
+            if period:
+                full_title += f"  |  Period: {period}"
+            _style_sheet(ws, df, title=full_title)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # 全量报告（方便一键输出 Excel）
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -210,18 +372,14 @@ def export_to_excel(
     output_path: str,
 ) -> None:
     """
-    将所有报表写入 Excel，每张报表一个 Sheet。
+    将所有报表写入 Excel，每张报表一个 Sheet（带格式化）。
     """
-    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-        pl_summary(aoc_list, rca_list).to_excel(
-            writer, sheet_name="P&L Summary", index=False)
-        bs_summary(aoc_list, rca_list).to_excel(
-            writer, sheet_name="BS Summary", index=False)
-        aoc_detail(aoc_list).to_excel(
-            writer, sheet_name="AOC Detail", index=False)
-        gl_detail(batches).to_excel(
-            writer, sheet_name="GL Entries", index=False)
-        trial_balance(batches).to_excel(
-            writer, sheet_name="Trial Balance", index=False)
-
-    print(f"[report] 已写入 Excel：{output_path}")
+    sheets = {
+        "P&L Summary":    pl_summary(aoc_list, rca_list),
+        "Balance Sheet":  bs_summary(aoc_list, rca_list),
+        "AOC Detail":     aoc_detail(aoc_list),
+        "GL Entries":     gl_detail(batches),
+        "Trial Balance":  trial_balance(batches),
+    }
+    write_formatted_excel(sheets, output_path=output_path)
+    print(f"[report] Written: {output_path}")
