@@ -1915,22 +1915,10 @@ All amounts in **HKD '000**. Intra-ICL transfers (CSM/PVFCF reclassifications) a
 
     n1 = note1_icl_movement(all_results, _YEAR)
     if not n1.empty:
-        def _style_n1(row):
-            styles = [""] * len(row)
-            label = str(row.name).strip()
-            if label.startswith("Opening") or label.startswith("Closing"):
-                styles = ["font-weight:700; background-color:#f0f4ff"] * len(row)
-            elif label.startswith("Sub-total") or label.startswith("Net Change"):
-                styles = ["font-weight:600; background-color:#f8fafc"] * len(row)
-            elif label.startswith("───"):
-                styles = ["color:#6b7280; font-style:italic"] * len(row)
-            return styles
-
         numeric_cols = [c for c in n1.columns if c in ["GMM", "VFA", "PAA", "Total"]]
         fmt_dict = {c: "{:,.1f}" for c in numeric_cols}
-
         st.dataframe(
-            n1.style.apply(_style_n1, axis=1).format(fmt_dict, na_rep=""),
+            n1.style.format(fmt_dict, na_rep=""),
             use_container_width=True,
             height=550,
         )
@@ -1987,19 +1975,9 @@ All amounts in **HKD '000**. Intra-ICL transfers (CSM/PVFCF reclassifications) a
 
     n2 = note2_icl_components(all_results, _YEAR)
     if not n2.empty:
-        def _style_n2(row):
-            styles = [""] * len(row)
-            comp = str(row.name[-1]) if hasattr(row.name, '__len__') else str(row.name)
-            if comp == "Total ICL":
-                styles = ["font-weight:700; background-color:#f0f4ff"] * len(row)
-            return styles
-
+        num_cols_n2 = n2.select_dtypes("number").columns.tolist()
         st.dataframe(
-            n2.style.apply(_style_n2, axis=1)
-              .format("{:,.1f}")
-              .map(lambda v: "color:#ef4444" if isinstance(v, float) and v < 0 else
-                             ("color:#16a34a" if isinstance(v, float) and v > 0 else ""),
-                   subset=["Change"]),
+            n2.style.format("{:,.1f}", subset=num_cols_n2, na_rep=""),
             use_container_width=True,
             height=500,
         )
@@ -2036,19 +2014,13 @@ All amounts in **HKD '000**. Intra-ICL transfers (CSM/PVFCF reclassifications) a
 
     n3 = note3_insurance_revenue(all_results, _YEAR)
     if not n3.empty:
-        def _style_n3(row):
-            if row.name == "Total":
-                return ["font-weight:700; background-color:#f0f4ff"] * len(row)
-            return [""] * len(row)
-
-        isr_cols = [c for c in n3.columns if c != "— Additional LC Recognised (ISE)"]
-        st.dataframe(
-            n3.style.apply(_style_n3, axis=1)
-              .format("{:,.1f}")
-              .bar(subset=["Total Insurance Revenue (ISR)"],
-                   color="#bbf7d0", vmin=0),
-            use_container_width=True,
-        )
+        num_cols_n3 = n3.select_dtypes("number").columns.tolist()
+        _n3_style = n3.style.format("{:,.1f}", subset=num_cols_n3, na_rep="")
+        if "Total Insurance Revenue (ISR)" in n3.columns:
+            _n3_style = _n3_style.bar(
+                subset=["Total Insurance Revenue (ISR)"], color="#bbf7d0", vmin=0
+            )
+        st.dataframe(_n3_style, use_container_width=True)
 
         st.info("""
 **Reading guide:**
@@ -2065,13 +2037,9 @@ All amounts in **HKD '000**. Intra-ICL transfers (CSM/PVFCF reclassifications) a
 
     n4 = note4_ifie(all_results, _YEAR)
     if not n4.empty:
-        def _style_n4(row):
-            if row.name == "Total":
-                return ["font-weight:700; background-color:#f0f4ff"] * len(row)
-            return [""] * len(row)
-
+        num_cols_n4 = n4.select_dtypes("number").columns.tolist()
         st.dataframe(
-            n4.style.apply(_style_n4, axis=1).format("{:,.1f}"),
+            n4.style.format("{:,.1f}", subset=num_cols_n4, na_rep=""),
             use_container_width=True,
         )
         st.info("""
@@ -2092,18 +2060,9 @@ VFA contracts generally don't use the OCI option — the underlying items mechan
     _all_rca_flat = [r for rcas in all_rca.values() for r in rcas]
     n5 = note5_rca_movement(_all_rca_flat, _YEAR)
     if not n5.empty:
-        def _style_n5(row):
-            label = str(row.name).strip()
-            if label.startswith("Opening") or label.startswith("Closing"):
-                return ["font-weight:700; background-color:#f0f4ff"] * len(row)
-            elif label.startswith("Sub-total") or label.startswith("Net Change"):
-                return ["font-weight:600; background-color:#f8fafc"] * len(row)
-            elif label.startswith("───"):
-                return ["color:#6b7280; font-style:italic"] * len(row)
-            return [""] * len(row)
-
+        num_cols_n5 = n5.select_dtypes("number").columns.tolist()
         st.dataframe(
-            n5.style.apply(_style_n5, axis=1).format("{:,.1f}", na_rep=""),
+            n5.style.format("{:,.1f}", subset=num_cols_n5, na_rep=""),
             use_container_width=True,
         )
         st.caption("""
@@ -2118,20 +2077,12 @@ The movement mirrors the gross ICL at the effective cession rate per cohort.*
 
     n6 = note6_maturity_profile(all_results, _YEAR)
     if not n6.empty:
-        def _style_n6(row):
-            if row.name[0] == "TOTAL":
-                return ["font-weight:700; background-color:#f0f4ff"] * len(row)
-            return [""] * len(row)
-
         bucket_cols = ["< 1 year", "1 – 3 years", "3 – 5 years", "> 5 years", "Grand Total"]
         fmt_cols = {c: "{:,.1f}" for c in bucket_cols if c in n6.columns}
-        st.dataframe(
-            n6.style.apply(_style_n6, axis=1)
-              .format(fmt_cols)
-              .bar(subset=["Grand Total"], color="#dbeafe", vmin=0),
-            use_container_width=True,
-            height=380,
-        )
+        _n6_style = n6.style.format(fmt_cols, na_rep="")
+        if "Grand Total" in n6.columns:
+            _n6_style = _n6_style.bar(subset=["Grand Total"], color="#dbeafe", vmin=0)
+        st.dataframe(_n6_style, use_container_width=True, height=380)
 
         # Stacked bar chart
         with st.expander("📊 Visual: Maturity Distribution by Cohort"):
@@ -2170,20 +2121,14 @@ The movement mirrors the gross ICL at the effective cession rate per cohort.*
 
     nd = note1_cohort_detail(all_results, _YEAR)
     if not nd.empty:
-        def _style_nd(row):
-            if row.name.startswith("MED_ONR"):
-                return ["background-color:#fff7ed"] * len(row)
-            return [""] * len(row)
-
         fmt_nd = {c: "{:,.1f}" for c in nd.select_dtypes("number").columns}
-        st.dataframe(
-            nd.style.apply(_style_nd, axis=1)
-              .format(fmt_nd)
-              .map(lambda v: "color:#ef4444;font-weight:700"
-                   if isinstance(v, float) and v > 5 and "LC" in str(v) else "", subset=["Closing LC"])
-              .highlight_max(subset=["Closing CSM"], color="#dcfce7"),
-            use_container_width=True,
-        )
+        _nd_style = nd.style.format(fmt_nd, na_rep="")
+        if "Closing CSM" in nd.columns:
+            try:
+                _nd_style = _nd_style.highlight_max(subset=["Closing CSM"], color="#dcfce7")
+            except Exception:
+                pass
+        st.dataframe(_nd_style, use_container_width=True)
 
     # ── Excel download ─────────────────────────────────────────────────────
     st.markdown("---")
