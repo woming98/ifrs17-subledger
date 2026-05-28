@@ -156,7 +156,7 @@ with st.sidebar:
     st.caption("**Cohorts in demo**")
     st.markdown("""
 - <span class="badge-gmm">GMM</span> TERM_GMM_2022 — Term 5Y<br>
-  &nbsp;&nbsp;🔀 **Layered XL**: L1(0–300k) Hanover 20% · L2(300k–600k) MR 20% + BOC 80%
+  &nbsp;&nbsp;🔀 **XL** (effective rates): Hanover 12% · MR 8% · BOC 32% · Retention 48%
 - <span class="badge-gmm">GMM</span> MED_GMM_2021 — Medical LT · QS 20% Munich Re
 - <span class="badge-gmm">GMM</span> MED_GMM_ONR — Onerous · No RI
 - <span class="badge-gmm">GMM</span> MED_ONR_RECOVERY — ☠️→🟢 Onerous→Profitable · No RI
@@ -175,7 +175,7 @@ st.title("📊 IFRS 17 Subledger — Full Process Demo")
 st.markdown("""
 > **Coverage**: GMM · PAA · **VFA** · Quota Share + **Layered XL** RCA · AOC 9-step decomposition  
 > **Multi-period**: 8 cohorts × 4 quarters · **Sensitivity analysis** · Custom CSV upload  
-> **Reinsurance**: 3-treaty layered XL (Hanover Re / Munich Re / BOC Re) for TERM cohort
+> **Reinsurance**: Layered XL for TERM cohort — pre-computed effective rates (Hanover 12% / MR 8% / BOC 32%)
 """)
 
 if not st.session_state.get("has_run", False):
@@ -202,7 +202,7 @@ Switch to the **📖 How It Works** tab to understand IFRS 17 concepts.
 def run_all_periods(data_path: str, coa_path: str, treaty_path: str, tol: float):
     """
     Process all 4 quarters from actuarial_output.csv.
-    Uses reinsurance_treaties.yaml for layered XL + multi-reinsurer support.
+    Uses reinsurance_treaties.yaml for multi-reinsurer support (QS + XL effective rates).
 
     Returns:
         all_results : {period: [AOCResult, ...]}
@@ -214,7 +214,7 @@ def run_all_periods(data_path: str, coa_path: str, treaty_path: str, tol: float)
     df  = pd.read_csv(data_path)
     coa = ChartOfAccounts(coa_path)
 
-    # 加载再保合同配置（分层 XL + QS）
+    # 加载再保合同配置（QS + XL 有效比例）
     treaties_by_cohort, claim_dist = load_treaties(treaty_path)
 
     all_results: dict = {}
@@ -2280,49 +2280,56 @@ routes most IFIE through CSM.
 </div>
 """, unsafe_allow_html=True)
 
-    # ── Section 6: Layered XL Reinsurance & LEV ──────────────────────────
-    st.markdown("### 6. Layered Excess-of-Loss Reinsurance & LEV")
+    # ── Section 6: Layered XL Reinsurance ────────────────────────────────
+    st.markdown("### 6. Layered Excess-of-Loss Reinsurance")
     st.markdown("""
 Real-world reinsurance programmes are rarely a single Quota Share.  
 A typical arrangement stacks **multiple layers**, each potentially split across several reinsurers:
 """)
 
     st.code("""
-Example: Medical / Term product reinsurance programme
-─────────────────────────────────────────────────────
-  Layer 1  (claim  0 – 300k)   80% retained,  20% → Hanover
-  Layer 2  (claim 300k – 600k) 20% → MR,      80% → BOC Re
-  Above 600k                   retained (or separate Cat XL)
+Example: TERM_GMM_2022 — 2-layer XL programme (sum insured = HKD 500k)
+────────────────────────────────────────────────────────────────────────
+  Layer 1  (0 – 300k)    80% retained  |  20% → Hanover Re
+  Layer 2  (300k – 600k) 20% → MR      |  80% → BOC Re
+  Above 600k             retained (or separate Cat XL)
 """, language="")
 
     st.markdown("""
-**Key concept — Limited Expected Value (LEV)**
+**Converting layers to effective cession rates (total-loss products)**
 
-To price each layer, actuaries use the *layer function* derived from LEV:
+For life products such as term insurance, each claim is either a **full death benefit**
+(total loss) or zero — there is no partial-loss severity distribution.  
+Under this total-loss assumption, each reinsurer's effective share is fixed and can be
+calculated algebraically upfront:
 
-$$E[\\text{Layer}_{[a,b]}] = E[X \\wedge b] - E[X \\wedge a]$$
+| Reinsurer | Calculation | Effective Rate |
+|-----------|-------------|----------------|
+| Hanover Re | 300k × 20% / 500k | **12%** |
+| Munich Re  | 200k × 20% / 500k | **8%** |
+| BOC Re     | 200k × 80% / 500k | **32%** |
+| Retention  | 300k × 80% / 500k | **48%** |
+| **Total**  | | **100%** |
 
-where the LEV at limit $d$ is:
+These pre-computed rates are stored directly in `reinsurance_treaties.yaml` as
+`effective_cession_rate`, and each reinsurer is treated **identically to a Quota Share**
+from the subledger's perspective.
 
-$$E[X \\wedge d] = \\int_0^d S(x)\\, dx, \\quad S(x) = P(X > x)$$
+**When would you need LEV instead?**  
+Products where claim size is a continuous random variable (large-group medical, catastrophe XL)
+require the LEV (Limited Expected Value) layer function to compute expected layer recoveries.
+For term / whole life insurance (binary claim outcome), the fixed-rate approach above is exact.
 
-For a **log-normal** claim distribution $X \\sim \\text{LogNormal}(\\mu, \\sigma)$:
-
-$$E[X \\wedge d] = e^{\\mu + \\sigma^2/2}\\, \\Phi\\!\\left(\\frac{\\ln d - \\mu - \\sigma^2}{\\sigma}\\right) + d\\left[1 - \\Phi\\!\\left(\\frac{\\ln d - \\mu}{\\sigma}\\right)\\right]$$
-
-This gives the **expected claim recovery per layer**, which feeds into each RCA's PVFCF.
-
-**Why does each layer need a separate RCA?**  
-Layer 2 (300k–600k) has *lower frequency* but *higher severity* than Layer 1.  
-Their RA (risk adjustment) profiles differ, and each reinsurance contract is a distinct 
-legal entity under IFRS 17 — they cannot be merged.
+**Why does each reinsurer need a separate RCA?**  
+Even with identical effective rates, each reinsurance contract is a distinct legal entity
+under IFRS 17 §60 — they carry separate RA profiles, CSM, and credit risk, and must be
+measured and disclosed independently.
 """)
 
     st.info("""
-**In practice (and in this demo):** The actuarial system (Prophet / MoSes) outputs  
-**pre-calculated PVFCF per cohort** — the LEV layer-splitting is done *inside* Prophet,  
-not in the subledger. The subledger simply reads the numbers from `actuarial_output.csv`  
-and processes each RCA independently. This is the standard architecture in production.
+**Production architecture:** In practice, Prophet / MoSes outputs PVFCF per reinsurer
+directly (after internal LEV or fixed-rate calculations). The subledger reads those numbers
+and processes each RCA independently — no layer arithmetic needed at the GL level.
 """)
 
     # ── Section 7: Onerous Contracts — Full Lifecycle ────────────────────
